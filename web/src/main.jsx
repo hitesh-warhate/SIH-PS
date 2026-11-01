@@ -4,15 +4,18 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { I18nProvider } from './i18n/index.jsx';
 import { AuthProvider } from './auth.jsx';
 import { applyStoredPreferences } from './components/Controls.jsx';
+import ConnectionBanner from './components/ConnectionBanner.jsx';
 import { AdminPortal, DoctorPortal, Landing, PatientPortal, StaffPortal } from './portals/Portals.jsx';
 import './styles.css';
 import './ui.css';
+import './theme.css';
 
 applyStoredPreferences();
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <I18nProvider>
       <AuthProvider>
+        <ConnectionBanner />
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Landing />} />

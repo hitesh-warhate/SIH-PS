@@ -280,8 +280,9 @@ export default function InterviewFlow({ onComplete }) {
       {calmBox}
       <p className="progress">{t('interview.progress', { n: progress.answered + 1, total: progress.total })}
         {progress.total > 30 && <> <button type="button" className="linklike" onClick={() => setStep('paused')}>{t('interview.pause')}</button></>}</p>
+      <div className="qbar" aria-hidden="true"><i style={{ width: `${progress.total ? Math.min(100, (progress.answered / progress.total) * 100) : 0}%` }} /></div>
 
-      <section>
+      <section key={q.key}>
         {q.followUp && <span className="badge"><Icon name="followup" size={20} /> {t('icon.followup')}</span>}
         <h1>{q.text}</h1>
         {q.critical && <p className="draft-note">{t('interview.criticalNote')}</p>}

@@ -11,7 +11,30 @@ import DocumentsFlow from './DocumentsFlow.jsx';
 
 const PURPOSES = [['history', 'consent.history'], ['documents', 'consent.documents'], ['his_sharing', 'consent.his'], ['abha_linking', 'consent.abha']];
 const ROUTES = [['patientcase_id', 'lookup.patientcase'], ['abha', 'lookup.abha'], ['aadhaar', 'lookup.aadhaar'], ['mobile_otp', 'lookup.mobile']];
-const EMPTY_FORM = { fullName: '', age: '', sex: '', address: '', emergencyContact: '', abhaId: '', registrationConsent: false };
+// The journey as the patient sees it: six stages, shown as a progress rail beside every screen.
+const STAGES = ['language', 'identify', 'consent', 'questions', 'papers', 'done'];
+const STAGE_OF = { language: 0, consent: 2, interview: 3, documents: 4, done: 5, 'interview-done': 5, ended: 2 };
+const stageOf = (step) => STAGE_OF[step] ?? 1;
+
+function Journey({ step, children }) {
+  const { t } = useI18n();
+  const current = stageOf(step);
+  return (
+    <div className="journey">
+      <ol className="stepper" aria-label={t('steps.label')}>
+        {STAGES.map((s, i) => (
+          <li key={s} className={i < current ? 'is-done' : i === current ? 'is-current' : ''} aria-current={i === current ? 'step' : undefined}>
+            <span className="st-dot">{i < current ? '✓' : i + 1}</span>
+            <span className="st-label">{t(`steps.${s}`)}</span>
+          </li>
+        ))}
+      </ol>
+      <div className="journey-main">{children}</div>
+    </div>
+  );
+}
+
+const EMPTY_FORM ={ fullName: '', age: '', sex: '', address: '', emergencyContact: '', abhaId: '', registrationConsent: false };
 
 // Patient journey, phase 1: language, identify or register, consent. One thing per screen; voice or touch.
 export default function PatientFlow() {
@@ -177,7 +200,7 @@ export default function PatientFlow() {
   );
 
   if (step === 'interview') {
-    return <InterviewFlow onComplete={() => setStep('documents')} />;
+    return <Journey step={step}><InterviewFlow onComplete={() => setStep('documents')} /></Journey>;
   }
   if (step === 'documents') {
     // Finishing the papers submits the intake: the draft summary is prepared for the doctor. The patient hears and sees only a confirmation (FR-C5, FR-P5).
@@ -189,15 +212,16 @@ export default function PatientFlow() {
       } catch { setSubmitError(t('flow.submit.error')); }
     };
     return (
-      <>
+      <Journey step={step}>
         <DocumentsFlow onComplete={submit} />
         {submitError && <p role="alert" className="error big-note">{submitError}</p>}
-      </>
+      </Journey>
     );
   }
 
   return (
-    <div className="flow">
+    <Journey step={step}>
+    <div className="flow" key={step}>
       {step !== 'interview-done' && nav}
       {helpMsg && <p role="status" className="ok big-note">{helpMsg}</p>}
       {step === 'language' && (
@@ -368,5 +392,6 @@ export default function PatientFlow() {
         </section>
       )}
     </div>
+    </Journey>
   );
 }

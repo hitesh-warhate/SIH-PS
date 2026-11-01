@@ -26,7 +26,7 @@ export function MiniBars({ series, labels, unit = '', height = 64 }) {
   );
 }
 
-const PALETTE = ['#8cc63f', '#2f6a0c', '#f08a24', '#3b82c4', '#7c5cc4', '#c94f7c', '#9aa59a'];
+const PALETTE = ['#14b8a6', '#6366f1', '#f59e0b', '#0ea5e9', '#a855f7', '#f43f5e', '#94a3b8'];
 
 // A ring chart of shares, with a legend. Hovering a slice or a legend row highlights it.
 export function Donut({ items, total, centerLabel, getLabel, size = 168, empty }) {
