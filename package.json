@@ -1,0 +1,25 @@
+{
+  "name": "patientcase-ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PatientCase_AI: AI-powered patient case-taking software (SIH 26047)",
+  "workspaces": ["server", "web"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "setup": "npm install && npm run migrate && npm run seed",
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w server\" \"npm run dev -w web\"",
+    "migrate": "npm run migrate -w server",
+    "seed": "npm run seed -w server",
+    "lint": "eslint .",
+    "test": "npm test -w server && npm test -w web",
+    "build": "npm run build -w web"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "concurrently": "^9.1.0",
+    "eslint": "^9.17.0",
+    "eslint-plugin-react": "^7.37.2",
+    "globals": "^15.14.0"
+  }
+}

@@ -1,0 +1,121 @@
+[
+  {
+    "id": "en-rx-printed",
+    "file": "en-rx-printed.png",
+    "lang": "en",
+    "docType": "prescription",
+    "style": "printed"
+  },
+  {
+    "id": "en-rx-scan",
+    "file": "en-rx-scan.jpg",
+    "lang": "en",
+    "docType": "prescription",
+    "style": "scan"
+  },
+  {
+    "id": "en-rx-script",
+    "file": "en-rx-script.png",
+    "lang": "en",
+    "docType": "prescription",
+    "style": "script"
+  },
+  {
+    "id": "en-lab-printed",
+    "file": "en-lab-printed.png",
+    "lang": "en",
+    "docType": "lab_report",
+    "style": "printed"
+  },
+  {
+    "id": "en-lab-scan",
+    "file": "en-lab-scan.jpg",
+    "lang": "en",
+    "docType": "lab_report",
+    "style": "scan"
+  },
+  {
+    "id": "en-dis-printed",
+    "file": "en-dis-printed.png",
+    "lang": "en",
+    "docType": "discharge_summary",
+    "style": "printed"
+  },
+  {
+    "id": "en-other-printed",
+    "file": "en-other-printed.png",
+    "lang": "en",
+    "docType": "other",
+    "style": "printed"
+  },
+  {
+    "id": "hi-rx-printed",
+    "file": "hi-rx-printed.png",
+    "lang": "hi",
+    "docType": "prescription",
+    "style": "printed"
+  },
+  {
+    "id": "hi-rx-scan",
+    "file": "hi-rx-scan.jpg",
+    "lang": "hi",
+    "docType": "prescription",
+    "style": "scan"
+  },
+  {
+    "id": "hi-lab-printed",
+    "file": "hi-lab-printed.png",
+    "lang": "hi",
+    "docType": "lab_report",
+    "style": "printed"
+  },
+  {
+    "id": "hi-dis-printed",
+    "file": "hi-dis-printed.png",
+    "lang": "hi",
+    "docType": "discharge_summary",
+    "style": "printed"
+  },
+  {
+    "id": "hi-other-printed",
+    "file": "hi-other-printed.png",
+    "lang": "hi",
+    "docType": "other",
+    "style": "printed"
+  },
+  {
+    "id": "mr-rx-printed",
+    "file": "mr-rx-printed.png",
+    "lang": "mr",
+    "docType": "prescription",
+    "style": "printed"
+  },
+  {
+    "id": "mr-rx-scan",
+    "file": "mr-rx-scan.jpg",
+    "lang": "mr",
+    "docType": "prescription",
+    "style": "scan"
+  },
+  {
+    "id": "mr-lab-printed",
+    "file": "mr-lab-printed.png",
+    "lang": "mr",
+    "docType": "lab_report",
+    "style": "printed"
+  },
+  {
+    "id": "mr-dis-printed",
+    "file": "mr-dis-printed.png",
+    "lang": "mr",
+    "docType": "discharge_summary",
+    "style": "printed"
+  },
+  {
+    "id": "mr-other-printed",
+    "file": "mr-other-printed.png",
+    "lang": "mr",
+    "docType": "other",
+    "style": "printed"
+  }
+]
