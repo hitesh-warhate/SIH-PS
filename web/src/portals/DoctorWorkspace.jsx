@@ -154,7 +154,9 @@ function SummaryTab({ enc, data, reload, onJump }) {
                   : <strong>{text(it)}</strong>)}
                 {(edits[it.id] || it.edited) && <> <Tag kind="sev-warning">{t('ws.edited')}</Tag></>}
                 {it.needsReview && <> <Tag kind="sev-warning">{t('analysis.toCheck')}</Tag></>}
+                {it.askedBy === 'ai' && <> <span className="tag ai-tag" title={it.rationale || undefined}>{t('ws.askedByAi')}</span></>}
                 {' '}<SourceChip source={it.source} />
+                {it.askedBy === 'ai' && it.rationale && <small className="muted ai-why">{t('ws.aiWhy', { why: it.rationale })}</small>}
                 {canEdit && it.status === 'answered' && <button type="button" className="linklike no-print" onClick={() => setEditing(it.id)}>{t('ws.summary.edit')}</button>}
               </li>
             ))}

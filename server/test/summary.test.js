@@ -19,7 +19,7 @@ async function patient(name, { complaint = 'fever', duration = 'd1_3', files = [
   const consent = await t.call('POST', '/api/patient/consent', { cookie: reg.cookie, body: { purposes: ALL } });
   const cookie = reg.cookie, enc = consent.body.encounterId;
   const answer = (questionKey, value, extra = {}) => t.call('POST', '/api/patient/interview/answer', { cookie, body: { questionKey, value, modality: 'tap', confirmation: CONFIRM, ...extra } });
-  await answer('emergency.screen', ['none']);
+  await answer('cc.reason', 'test visit'); await answer('emergency.screen', ['none']);
   await answer('cc.main', complaint);
   await answer('cc.duration', duration);
   for (const k of skip) await answer(k, undefined, { skipped: true });

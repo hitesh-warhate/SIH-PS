@@ -120,7 +120,7 @@ test('session cookies are HttpOnly and SameSite, and a text answer is escaped in
   const reg = await t.registerPatient({ fullName: 'Escape Tester', mobile, age: 33 });
   const consent = await t.call('POST', '/api/patient/consent', { cookie: reg.cookie, body: { purposes: { history: true, documents: true, his_sharing: true, abha_linking: true } } });
   const evil = '<img src=x onerror=alert(1)> & "quotes"';
-  for (const [k, v] of [['emergency.screen', ['none']], ['cc.main', 'other']]) await t.call('POST', '/api/patient/interview/answer', { cookie: reg.cookie, body: { questionKey: k, value: v, modality: 'tap', confirmation: CONFIRM } });
+  for (const [k, v] of [['cc.reason', 'test visit'], ['emergency.screen', ['none']], ['cc.main', 'other'], ['cc.duration', 'd1_3']]) await t.call('POST', '/api/patient/interview/answer', { cookie: reg.cookie, body: { questionKey: k, value: v, modality: 'tap', confirmation: CONFIRM } });
   await t.call('POST', '/api/patient/interview/answer', { cookie: reg.cookie, body: { questionKey: 'cc.other_text', value: evil, modality: 'tap' } });
   await t.call('POST', '/api/patient/submit', { cookie: reg.cookie });
   await t.call('POST', `/api/doctor/encounters/${consent.body.encounterId}/consult`, { cookie: doctor });

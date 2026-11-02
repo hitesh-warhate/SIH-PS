@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { QUESTIONS } from '../../server/config/questions.v1.js';
-import { matchSpoken, normalize, labelFor, isConfident } from '../src/interview/matching.js';
+import { matchSpoken, matchSpokenAny, spokenDigits, normalize, labelFor, isConfident } from '../src/interview/matching.js';
 import { presentation, modeForNextQuestion, MODES } from '../src/interview/presentation.js';
 
 const LANGS = ['en', 'hi', 'mr'];
@@ -70,6 +70,30 @@ test('answers read back to the patient use the labels of the current language', 
   const q = present(QUESTIONS.find((x) => x.key === 'pmh.conditions'), 'hi');
   assert.equal(labelFor(q, ['diabetes', 'tb']), 'मधुमेह (शुगर), टीबी (क्षय रोग)');
   assert.equal(normalize(' हाँ! '), 'हाँ');
+});
+
+test('dictated numbers become digits, whether spoken as words, with spaces or in Devanagari', () => {
+  for (const [said, want] of [
+    ['nine eight seven six five four three two one zero', '9876543210'], ['98765 43210', '9876543210'], ['९८७६५४३२१०', '9876543210'],
+    ['double nine one two', '9912'], ['नौ आठ सात', '987'], ['नऊ दोन', '92'], ['my code is 4 5 6 1 2 3', '456123'], ['hello', ''],
+  ]) assert.equal(spokenDigits(said), want, said);
+});
+
+test('an answer is found among the recognizer\'s other guesses when the best guess is wrong', () => {
+  const yn = present(QUESTIONS.find((q) => q.key === 'allergy.any'), 'en');
+  assert.deepEqual(matchSpokenAny(yn, 'en', ['yesterday', 'yes']), { value: 'yes', transcript: 'yes' });
+  assert.equal(matchSpokenAny(yn, 'en', ['maybe', 'perhaps']), null);
+  assert.deepEqual(matchSpoken(yn, 'hi', 'haan'), { value: 'yes' });
+  assert.deepEqual(matchSpoken(yn, 'hi', 'nahi'), { value: 'no' });
+});
+
+test('an answer in the patient\'s own words is accepted when it clearly points to one option, and never guessed otherwise', () => {
+  const progress = present(QUESTIONS.find((q) => q.key === 'hpi.progress'), 'en');
+  const [better] = progress.options;
+  assert.deepEqual(matchSpoken(progress, 'en', `it is ${better.label.toLowerCase().split(' ').pop()} now`), { value: better.value });
+  // the emergency screen needs most of the label's words, so "chest pain" alone is not read as "chest pain with difficulty breathing"
+  const emergency = present(QUESTIONS.find((q) => q.key === 'emergency.screen'), 'en');
+  assert.equal(matchSpoken(emergency, 'en', 'chest pain'), null);
 });
 
 test('recognizer confidence below the threshold is treated as not understood', () => {

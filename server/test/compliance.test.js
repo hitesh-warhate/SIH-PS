@@ -25,7 +25,7 @@ async function patient({ mobile = `91000${String(10000 + n++)}`, name = 'Complia
   const consent = await t.call('POST', '/api/patient/consent', { cookie: reg.cookie, body: { purposes: ALL } });
   const enc = consent.body.encounterId;
   const answer = (k, v, extra = {}) => t.call('POST', '/api/patient/interview/answer', { cookie: reg.cookie, body: { questionKey: k, value: v, modality: 'voice', confirmation: CONFIRM, ...extra } });
-  if (answers) { await answer('emergency.screen', ['none'], { transcript: 'nothing at all' }); await answer('cc.main', 'fever', { transcript: 'I have fever' }); }
+  if (answers) { await answer('cc.reason', 'test visit'); await answer('emergency.screen', ['none'], { transcript: 'nothing at all' }); await answer('cc.main', 'fever', { transcript: 'I have fever' }); }
   return { cookie: reg.cookie, enc, mobile, answer, submit: () => t.call('POST', '/api/patient/submit', { cookie: reg.cookie }) };
 }
 
@@ -33,7 +33,7 @@ async function patient({ mobile = `91000${String(10000 + n++)}`, name = 'Complia
 test('the audit log is partitioned by month and records consent, access, edit, alert, sign-in and push events', async () => {
   const p = await patient();
   await p.answer('pain.site', 'chest'); // not reachable: ignored
-  await p.answer('emergency.screen', ['e_chest']); // alert
+  await p.answer('cc.reason', 'test visit'); await p.answer('emergency.screen', ['e_chest']); // alert
   await p.submit();
   await t.call('GET', `/api/doctor/encounters/${p.enc}/summary`, { cookie: doctor });
   await t.call('POST', `/api/doctor/encounters/${p.enc}/consult`, { cookie: doctor });
@@ -169,7 +169,7 @@ test('after submission raw transcripts and expired working files are gone while 
   assert.ok(!left.includes('stale-working-file.png'), 'expired working file removed');
   assert.ok(left.includes('fresh-working-file.png'), 'a file still inside its time-to-live is left alone');
   const answers = await q(`SELECT question_key, answer FROM interview_responses WHERE encounter_id = $1 ORDER BY question_key`, [p.enc]);
-  assert.deepEqual(answers.map((a) => [a.question_key, a.answer.value]), [['cc.main', 'fever'], ['emergency.screen', ['none']]], 'the structured answers remain');
+  assert.deepEqual(answers.map((a) => [a.question_key, a.answer.value]), [['cc.main', 'fever'], ['cc.reason', 'test visit'], ['emergency.screen', ['none']]], 'the structured answers remain');
   assert.equal((await q(`SELECT count(*)::int n FROM summaries WHERE encounter_id = $1`, [p.enc]))[0].n, 1);
   assert.equal((await q(`SELECT count(*)::int n FROM audit_logs WHERE action = 'temporary_data_purged' AND object_id = $1`, [p.enc]))[0].n, 1);
 });
@@ -188,13 +188,13 @@ test('revoking documents or history before the doctor confirms removes that data
   assert.equal((await q(`SELECT count(*)::int n FROM lab_results l LEFT JOIN documents d ON d.id = l.document_id WHERE d.id IS NULL`))[0].n, 0);
   assert.ok(!(await readdir(t.docs.store.paths.files)).includes(refs[0]), 'the stored file is deleted');
   assert.equal((await q(`SELECT payload->'events' AS e FROM analysis_results WHERE encounter_id = $1 AND kind = 'timeline'`, [p.enc]))[0].e.length ?? 0, 0, 'the analysis no longer shows the files');
-  assert.equal((await q('SELECT count(*)::int n FROM interview_responses WHERE encounter_id = $1', [p.enc]))[0].n, 2, 'history untouched by revoking documents');
+  assert.equal((await q('SELECT count(*)::int n FROM interview_responses WHERE encounter_id = $1', [p.enc]))[0].n, 3, 'history untouched by revoking documents');
 
   assert.equal((await t.call('POST', '/api/patient/consent/revoke', { cookie: p.cookie, body: { purposes: ['history'] } })).status, 200);
   assert.equal((await q('SELECT count(*)::int n FROM interview_responses WHERE encounter_id = $1', [p.enc]))[0].n, 0);
   assert.equal((await t.call('GET', '/api/patient/interview/next', { cookie: p.cookie })).status !== 200, true, 'the session is closed');
   const log = await q(`SELECT detail FROM audit_logs WHERE action = 'data_removed_on_revocation' AND object_id = $1 ORDER BY at`, [p.enc]);
-  assert.deepEqual(log.map((l) => l.detail), [{ documents: 1 }, { history: 2 }]);
+  assert.deepEqual(log.map((l) => l.detail), [{ documents: 1 }, { history: 3 }]);
 });
 
 test('a record the doctor has already confirmed is kept on revocation, and the log says so', async () => {
@@ -203,7 +203,7 @@ test('a record the doctor has already confirmed is kept on revocation, and the l
   await t.call('POST', `/api/doctor/encounters/${p.enc}/consult`, { cookie: doctor });
   await t.call('POST', `/api/doctor/encounters/${p.enc}/summary/accept`, { cookie: doctor });
   assert.equal((await t.call('POST', '/api/patient/consent/revoke', { cookie: p.cookie, body: { purposes: 'all' } })).status, 200);
-  assert.equal((await q('SELECT count(*)::int n FROM interview_responses WHERE encounter_id = $1', [p.enc]))[0].n, 2, 'a confirmed clinical record is not erased');
+  assert.equal((await q('SELECT count(*)::int n FROM interview_responses WHERE encounter_id = $1', [p.enc]))[0].n, 3, 'a confirmed clinical record is not erased');
   const [log] = await q(`SELECT detail FROM audit_logs WHERE action = 'data_removed_on_revocation' AND object_id = $1`, [p.enc]);
   assert.equal(log.detail.history, 'kept_confirmed_record');
 });

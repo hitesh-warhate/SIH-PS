@@ -454,6 +454,71 @@ html.high-contrast .pcard-ico { color: #000; }
 .feat:nth-child(odd) .feat-ico { color: var(--primary-ink); }
 .land-foot { text-align: center; color: var(--muted); font-size: 0.85rem; padding: 48px 0 16px; }
 
+/* =========================================================== ease of use */
+/* "Aa Display" menu: text size, contrast and theme behind one button */
+.display-menu { position: relative; }
+.display-menu > summary { list-style: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 16px; border-radius: 16px; background: var(--surface-2); color: var(--text); font-weight: 600; cursor: pointer; user-select: none; }
+.display-menu > summary::-webkit-details-marker { display: none; }
+.display-menu > summary:hover { background: var(--surface-3); }
+.display-menu[open] > summary { background: var(--surface); box-shadow: var(--shadow); }
+.display-menu .aa { font-family: var(--font-display); font-weight: 800; color: var(--primary-ink); }
+.display-pop { position: absolute; right: 0; top: calc(100% + 10px); z-index: 40; min-width: 240px; display: grid; gap: 14px; padding: 16px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-lg); animation: rise 0.2s var(--ease) both; }
+.display-pop .a11y-toggles { flex-direction: column; gap: 10px; color: var(--text); }
+.display-pop .theme-toggle { justify-self: start; }
+.restart-btn { padding: 0 18px; border-radius: 16px; background: transparent; font-weight: 700; color: var(--muted); }
+.restart-btn:hover { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+
+/* patient steps: a plain sentence under each title, hints next to the button */
+.step-sub { margin: -12px 0 22px; color: var(--muted); font-size: 1.08rem; max-width: 60ch; }
+.field-hint { margin: 6px 0 0; color: var(--muted); font-weight: 600; }
+.field-hint.is-bad { color: var(--danger); }
+.resend { display: block; margin-top: 16px; padding: 8px 0; background: none; border: 0; font-size: 1rem; }
+.consent-row > p { margin-bottom: 2px; }
+.consent-why { display: block; margin-bottom: 4px; font-size: 0.95rem; }
+.mode-card { border: 0; background: none; display: grid; gap: 6px; text-align: left; }
+.mode-desc { font-size: 0.92rem; font-weight: 500; opacity: 0.85; }
+.choice.is-selected .mode-desc { opacity: 0.95; }
+
+/* interview: aids in a quiet row, Back on the left, Skip and Next on the right */
+.q-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 22px; padding: 10px 12px; border-radius: 18px; background: var(--surface-2); }
+.q-tools-label { width: 100%; font-size: 0.85rem; font-weight: 700; color: var(--muted); padding: 0 4px 2px; }
+.q-tools .icon-button { flex-direction: row; gap: 8px; padding: 0 16px; min-height: 52px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); font-weight: 600; }
+.q-tools .icon-button-active { background: var(--soft); color: var(--soft-ink); border-color: transparent; }
+.q-actions { align-items: center; margin-top: 16px; }
+.q-actions .grow { flex: 1; }
+.q-actions .icon-button { flex-direction: row; gap: 8px; padding: 0 20px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); }
+.q-actions .primary.big { margin-top: 0; }
+
+/* AI interviewer: the next question is being written; AI-asked questions in the doctor's summary */
+.preparing { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; padding: 12px 16px; border-radius: 14px; background: var(--soft); color: var(--soft-ink); font-weight: 600; }
+.preparing .spinner { border-color: rgba(13, 148, 136, 0.25); border-top-color: var(--primary); }
+.ai-tag { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.ai-why { display: block; margin: 2px 0 6px; font-style: italic; }
+
+/* voice: the words appear while the patient speaks */
+.field-row input.is-live { background: var(--soft); color: var(--soft-ink); border-color: var(--primary) !important; font-style: italic; }
+.field-row .icon-button.is-listening { background: var(--grad); color: #fff; animation: mic 1.4s ease-in-out infinite; }
+.mic-status { display: block; margin-top: 4px; font-weight: 600; }
+.live-words { margin: 4px 0 8px; padding: 14px 18px; border-radius: 16px; background: var(--soft); color: var(--soft-ink); font-size: 1.25rem; font-weight: 600; font-style: italic; min-height: 1.5em; }
+
+/* sign in: test account (development only) and the way back */
+.auth-demo { margin: 0; padding: 10px 14px; border-radius: 12px; background: var(--soft); color: var(--soft-ink); font-weight: 600; font-size: 0.9rem; }
+.auth-back { justify-self: start; font-weight: 600; text-decoration: none; color: var(--muted); }
+.auth-back:hover { color: var(--primary-ink); }
+
+/* landing: how it works */
+.land-how h2 { font-size: 1.6rem; margin: 0 0 20px; }
+.how-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; counter-reset: none; }
+.how-steps li { position: relative; display: grid; gap: 6px; padding: 24px; border-radius: 22px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); }
+.how-steps li:not(:last-child)::after { content: '→'; position: absolute; right: -16px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); color: var(--primary-ink); font-weight: 800; z-index: 1; }
+.how-n { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; background: var(--grad); color: #fff; font-family: var(--font-display); font-weight: 800; margin-bottom: 6px; }
+.how-steps strong { font-family: var(--font-display); font-size: 1.12rem; }
+
+/* sidebar entries with icons */
+.nav a { display: flex; align-items: center; gap: 12px; }
+.nav a svg { flex: none; opacity: 0.75; }
+.nav a.active svg { opacity: 1; color: #5eead4; }
+
 /* =========================================================== responsive */
 @media (max-width: 1020px) {
   .land-hero { grid-template-columns: 1fr; padding-top: 28px; }
@@ -480,6 +545,8 @@ html.high-contrast .pcard-ico { color: #000; }
 }
 @media (max-width: 560px) {
   .pcards, .land-features { grid-template-columns: 1fr; }
+  .how-steps { grid-template-columns: 1fr; }
+  .how-steps li:not(:last-child)::after { display: none; }
   .land-main { gap: 48px; }
   .float-chip { font-size: 0.8rem; }
   .fc-1 { right: 0; }

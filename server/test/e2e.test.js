@@ -44,13 +44,14 @@ for (const lang of LANGS) {
         assert.equal(next.listeningMode, mode, `mode applies to ${next.question.key}${next.question.followUp ? ' (a follow-up)' : ''}`);
         seen.push(next.question);
         const full = QUESTIONS.find((x) => x.key === next.question.key);
-        assert.equal(next.question.text, full.text[IDX[lang]], `${next.question.key} is in ${lang}`);
+        // questions about the complaint are phrased around it ("About your cough: …"), so the bank text ends the shown text
+        assert.ok(next.question.text.endsWith(full.text[IDX[lang]]), `${next.question.key} is in ${lang}: ${next.question.text}`);
         const value = next.question.key === 'cc.main' ? 'cough' : next.question.key === 'cc.duration' ? 'w1_4' : fill(full);
         const body = { questionKey: next.question.key, value, modality, confirmation: CONFIRM, ...(modality === 'voice' ? { confidence: 0.9, transcript: 'spoken answer' } : {}) };
         assert.equal((await patient('POST', '/interview/answer', body)).status, 200, next.question.key);
       }
       assert.ok(seen.some((q) => q.followUp), 'follow-ups adapt to the chief complaint');
-      assert.ok(seen.some((q) => q.key === 'cough.type'), 'cough follow-ups were asked');
+      assert.ok(seen.some((q) => q.key === 'cough.blood'), 'cough follow-ups were asked');
       const stored = (await t.db.pool.query('SELECT DISTINCT modality FROM interview_responses WHERE encounter_id = $1', [enc])).rows.map((r) => r.modality);
       assert.deepEqual(stored, [modality], 'every answer was recorded with how it was given');
 
@@ -98,6 +99,7 @@ test('a new patient is stopped at a likely duplicate and the staff desk register
 test('an emergency answer raises a visible alert to staff and doctor at once, and the case keeps its place in the queue', async () => {
   const reg = await t.registerPatient({ fullName: 'Emergency Journey', mobile: '8800000003', age: 66, sex: 'male' });
   await t.call('POST', '/api/patient/consent', { cookie: reg.cookie, body: { purposes: ALL } });
+  await t.call('POST', '/api/patient/interview/answer', { cookie: reg.cookie, body: { questionKey: 'cc.reason', value: 'chest pain', modality: 'tap' } });
   const res = await t.call('POST', '/api/patient/interview/answer', { cookie: reg.cookie, body: { questionKey: 'emergency.screen', value: ['e_chest'], modality: 'tap', confirmation: CONFIRM } });
   assert.equal(res.body.staffNotified, true);
   for (const cookie of [staff, doctor]) {

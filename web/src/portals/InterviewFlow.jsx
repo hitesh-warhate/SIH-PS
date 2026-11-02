@@ -3,9 +3,9 @@ import { api } from '../api.js';
 import { useI18n } from '../i18n/index.jsx';
 import Icon from '../components/Icon.jsx';
 import IconButton from '../components/IconButton.jsx';
-import { Choice, VoiceField } from '../components/Fields.jsx';
+import { Choice, MIC_ERROR, VoiceField } from '../components/Fields.jsx';
 import { audioCue, speech } from '../speech/speech.js';
-import { isConfident, labelFor, matchSpoken } from '../interview/matching.js';
+import { isConfident, labelFor, matchSpokenAny } from '../interview/matching.js';
 import { MODE_ICONS, MODES, modeForNextQuestion, presentation } from '../interview/presentation.js';
 
 // The history interview (Module A): adaptive questions by voice or touch, with a read-back, a review screen and recovery.
@@ -24,6 +24,8 @@ export default function InterviewFlow({ onComplete }) {
   const [audioDone, setAudioDone] = useState(false);
   const [showTap, setShowTap] = useState(false);
   const [listening, setListening] = useState(false);
+  const [liveText, setLiveText] = useState(''); // the words heard so far, shown while the patient speaks
+  const [preparing, setPreparing] = useState(false);
   const [review, setReview] = useState([]);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -48,7 +50,9 @@ export default function InterviewFlow({ onComplete }) {
   }, []);
 
   const loadNext = useCallback(async (currentMode) => {
-    const r = await api(`/patient/interview/next?lang=${lang}`);
+    // With the AI interviewer the next question is written from the last answer, which can take a few seconds.
+    setPreparing(true);
+    const r = await api(`/patient/interview/next?lang=${lang}`).finally(() => setPreparing(false));
     if (!r.ok) { setMessage(t('signin.error.network')); return; }
     setProgress(r.body.progress);
     if (r.body.done) {
@@ -122,25 +126,32 @@ export default function InterviewFlow({ onComplete }) {
   const listen = async () => {
     audioCue();
     setListening(true);
+    setLiveText('');
     setMessage('');
+    let said = '';
     try {
-      const { transcript, confidence } = await speech.listen(lang);
-      const match = isConfident(confidence) ? matchSpoken(question, lang, transcript) : null;
+      const { transcript, confidence, alternatives = [transcript] } = await speech.listen(lang, { onInterim: setLiveText });
+      said = transcript;
+      // Every guess the recognizer offers is tried, best first, before the answer counts as not understood.
+      const match = isConfident(confidence) ? matchSpokenAny(question, lang, alternatives) : null;
       if (!match) throw new Error('no-match');
       setDraft(match.value);
-      setHeard({ transcript, confidence });
+      setHeard({ transcript: match.transcript, confidence });
       if (question.critical) readBack(match.value);
       else speak(t('interview.youSaid', { answer: labelFor(question, match.value) }));
     } catch (e) {
-      if (e.message === 'unsupported') { setShowTap(true); setMessage(t('flow.mic.unsupported')); }
+      // Problems with the microphone itself are not the patient's answer: say what to do, offer tapping, and do not count a failure.
+      if (MIC_ERROR[e.message]) { setShowTap(true); setMessage(t(MIC_ERROR[e.message])); }
       else {
         const r = await api('/patient/interview/recognition-failure', { method: 'POST', body: { questionKey: question.key } });
-        setMessage(r.body.alertedStaff ? t('interview.staffNotified') : t('interview.notCaught'));
+        const notCaught = said ? t('interview.heardNoMatch', { text: said }) : t('interview.notCaught');
+        setMessage(r.body.alertedStaff ? t('interview.staffNotified') : notCaught);
         if (r.body.offerTap) setShowTap(true);
         speak(t('interview.notCaught'));
       }
     } finally {
       setListening(false);
+      setLiveText('');
     }
   };
 
@@ -192,6 +203,7 @@ export default function InterviewFlow({ onComplete }) {
             <span className="mode-card">
               <span className="mode-icons">{MODE_ICONS[m].map((n) => <Icon key={n} name={n} size={40} />)}</span>
               <span>{t(`interview.mode.${m}`)}</span>
+              <small className="mode-desc">{t(`interview.mode.${m}.desc`)}</small>
             </span>
           </Choice>
         ))}
@@ -280,6 +292,7 @@ export default function InterviewFlow({ onComplete }) {
       {calmBox}
       <p className="progress">{t('interview.progress', { n: progress.answered + 1, total: progress.total })}
         {progress.total > 30 && <> <button type="button" className="linklike" onClick={() => setStep('paused')}>{t('interview.pause')}</button></>}</p>
+      {preparing && <p className="preparing" role="status"><span className="spinner" aria-hidden="true" />{t('interview.preparing')}</p>}
       <div className="qbar" aria-hidden="true"><i style={{ width: `${progress.total ? Math.min(100, (progress.answered / progress.total) * 100) : 0}%` }} /></div>
 
       <section key={q.key}>
@@ -295,6 +308,7 @@ export default function InterviewFlow({ onComplete }) {
             </button>
           </div>
         )}
+        {listening && <p className="live-words" aria-live="polite">{liveText ? `“${liveText}”` : t('flow.mic.listening')}</p>}
 
         {showOptions && ['yes_no', 'single'].includes(q.type) && (
           <div className="choices">
@@ -347,17 +361,23 @@ export default function InterviewFlow({ onComplete }) {
           </div>
         )}
 
-        <div className="controls">
+        {/* Hearing and answering aids, kept apart from the moves between questions so the main choice is obvious. */}
+        <div className="q-tools" role="group" aria-label={t('interview.tools')}>
+          <span className="q-tools-label">{t('interview.tools')}</span>
           <IconButton name="repeat" onClick={() => speak(q.text)} />
           <IconButton name="slower" onClick={() => speak(q.text, 0.6)} />
           {present.openMic && q.type !== 'text' && <IconButton name="speak" onClick={listen} />}
           {q.type !== 'text' && <IconButton name="tap" state={showOptions ? 'active' : 'default'} onClick={() => setShowTap((v) => !v)} />}
+        </div>
+        <div className="controls q-actions">
           <IconButton name="back" onClick={back} state={trail.current.length ? 'default' : 'disabled'} />
+          <span className="grow" />
           <IconButton name="skip" onClick={() => submit(true)} />
           <button type="button" className="touch primary big" disabled={!canNext || busy} onClick={() => submit(false)}>
             <Icon name="next" size={28} /> {t('icon.next')}
           </button>
         </div>
+        {draft == null && <p className="field-hint">{t('interview.pickFirst')}</p>}
       </section>
     </div>
   );

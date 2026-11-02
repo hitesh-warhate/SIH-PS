@@ -24,6 +24,21 @@ const PATHS = {
   help: 'M12 2a10 10 0 100 20 10 10 0 000-20zm1 16h-2v-2h2zm1.800-6.900l-.9.900c-.7.700-.9 1.100-.9 2h-2v-.5c0-1 .3-1.800.9-2.400l1.200-1.200c.4-.3.600-.8.600-1.300a2 2 0 00-4 0H7a4 4 0 118 0c0 .8-.3 1.600-.2 2.500z',
 };
 
+// One small picture per menu entry, so each section can be found without reading every label.
+const NAV_ICONS = {
+  dashboard: 'M3 3h8v8H3zm10 0h8v5h-8zM3 13h8v8H3zm10-3h8v11h-8z',
+  alerts: 'M12 2l10 18H2zm-1 7v5h2V9zm0 7v2h2v-2z',
+  queue: 'M4 5h16v2H4zm0 6h16v2H4zm0 6h10v2H4z',
+  register: 'M15 12a4 4 0 100-8 4 4 0 000 8zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2zm9 4c-2.700 0-8 1.300-8 4v2h16v-2c0-2.700-5.300-4-8-4z',
+  deliveries: 'M3 4h13v10H3zm13 4h3l2 3v3h-5zM6.500 15a2 2 0 110 4 2 2 0 010-4zm11 0a2 2 0 110 4 2 2 0 010-4z',
+  workspace: 'M7 3v6a4 4 0 008 0V3h-2v6a2 2 0 01-4 0V3zm4 10.900V16a5 5 0 0010 0v-2.200a2.500 2.500 0 10-2 0V16a3 3 0 01-6 0v-2.100z',
+  accounts: 'M9 12a4 4 0 100-8 4 4 0 000 8zm8 0a3 3 0 100-6 3 3 0 000 6zM1 20c0-3.300 3.600-6 8-6s8 2.700 8 6zm16.500-5.900C20.500 14.500 23 16.500 23 20h-4.500c0-2.300-.4-4.300-1-5.900z',
+  departments: 'M3 21V7l9-4 9 4v14h-7v-6h-4v6zm6-11h2v2H9zm4 0h2v2h-2z',
+  audit: 'M6 2h9l5 5v15H6zm8 1.500V8h4.500zM8 12h8v2H8zm0 4h8v2H8z',
+  health: 'M3 13h4l2-5 4 10 2-5h6v-2h-4.700L14 4l-4 10-1.700-4H3z',
+  reports: 'M4 20V10h3v10zm6 0V4h3v16zm6 0v-7h3v7z',
+};
+
 // Closes a popover on a click outside it or on Escape.
 function usePopover() {
   const [open, setOpen] = useState(false);
@@ -205,7 +220,7 @@ export function AppShell({ portal, items, banner = null, children }) {
   const closeHelp = useCallback(() => setHelp(false), []);
   const main = items.filter((i) => i[4] !== 'more');
   const more = items.filter((i) => i[4] === 'more');
-  const link = ([path, key]) => <NavLink key={path} to={`/${portal}/${path}`} end>{t(key)}</NavLink>;
+  const link = ([path, key]) => <NavLink key={path} to={`/${portal}/${path}`} end>{NAV_ICONS[path] && <Svg d={NAV_ICONS[path]} size={18} />}{t(key)}</NavLink>;
   return (
     <div className={`shell2 shell-${portal}`}>
       <nav className="nav" aria-label={t(`portal.${portal}`)}>

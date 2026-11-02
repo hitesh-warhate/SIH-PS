@@ -16,7 +16,7 @@ after(async () => { await db.drop(); });
 
 test('a fresh database migrates to schema v1, and migrating again is a no-op', async () => {
   const first = await migrate(db.url);
-  assert.deepEqual(first, ['001_schema_v1.sql', '002_registration_consent.sql', '003_interview.sql', '004_alerts_queue.sql', '005_documents.sql', '006_analysis.sql', '007_summary.sql', '008_ayush.sql', '009_compliance.sql', '010_admin_ops.sql', '011_ai_overview.sql']);
+  assert.deepEqual(first, ['001_schema_v1.sql', '002_registration_consent.sql', '003_interview.sql', '004_alerts_queue.sql', '005_documents.sql', '006_analysis.sql', '007_summary.sql', '008_ayush.sql', '009_compliance.sql', '010_admin_ops.sql', '011_ai_overview.sql', '012_ai_interview.sql']);
   assert.deepEqual(await migrate(db.url), []);
 });
 

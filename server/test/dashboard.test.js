@@ -15,7 +15,7 @@ before(async () => {
     const reg = await t.registerPatient({ fullName: name, mobile: `88${String(100000 + n++).padStart(8, '0')}`, age: 40 });
     const consent = await t.call('POST', '/api/patient/consent', { cookie: reg.cookie, body: { purposes: ALL } });
     const a = (k, v) => t.call('POST', '/api/patient/interview/answer', { cookie: reg.cookie, body: { questionKey: k, value: v, modality: 'tap', confirmation: CONFIRM } });
-    await a('emergency.screen', emergency ? ['e_chest'] : ['none']); await a('cc.main', complaint); await a('cc.duration', 'd1_3');
+    await a('cc.reason', 'test visit'); await a('emergency.screen', emergency ? ['e_chest'] : ['none']); await a('cc.main', complaint); await a('cc.duration', 'd1_3');
     await t.call('POST', '/api/patient/submit', { cookie: reg.cookie });
     if (decide) { await t.call('POST', `/api/doctor/encounters/${consent.body.encounterId}/consult`, { cookie: doctor }); await t.call('POST', `/api/doctor/encounters/${consent.body.encounterId}/summary/accept`, { cookie: doctor }); }
     return consent.body.encounterId;

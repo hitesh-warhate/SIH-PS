@@ -49,7 +49,7 @@ export async function createTestDatabase({ migrated = true, poolMax = 10 } = {})
 export const PASSWORDS = { staff: 'staff-test-pw', doctor: 'doctor-test-pw', admin: 'admin-test-pw' };
 
 // A migrated, seeded database plus a running app on a random port.
-export async function startTestApp({ redFlags, ocrEngine, limits, docWorkers = 3, his, requireMfa = false, loginLimiter, maxAttempts = 3, poolMax = 10, notifier, reportPool, monitorIntervalMs = 3_600_000, aiProvider } = {}) {
+export async function startTestApp({ redFlags, ocrEngine, limits, docWorkers = 3, his, requireMfa = false, loginLimiter, maxAttempts = 3, poolMax = 10, notifier, reportPool, monitorIntervalMs = 3_600_000, aiProvider, aiInterviewer = null } = {}) {
   const db = await createTestDatabase({ poolMax });
   await seed(db.url, { staffPassword: PASSWORDS.staff, doctorPassword: PASSWORDS.doctor, adminPassword: PASSWORDS.admin });
   const crypto = createCrypto({ encryptionKey: Buffer.alloc(32, 1), hashKey: Buffer.alloc(32, 2) });
@@ -61,7 +61,7 @@ export async function startTestApp({ redFlags, ocrEngine, limits, docWorkers = 3
   });
   const abdm = createStubAbdmProvider();
   const integration = createIntegration({ pool: db.pool, crypto, his: his ?? createHisConnector(), abdm, baseDelayMs: 20, maxAttempts, log: { error() {} } });
-  const app = createApp({ pool: db.pool, jwtSecret: 'test-secret', crypto, otp, abdm, integration, requireMfa, ...(aiProvider ? { aiProvider } : {}), ...(loginLimiter ? { loginLimiter } : {}), ...(notifier ? { notifier } : {}), ...(reportPool ? { reportPool } : {}), monitorIntervalMs, exposeDevCode: true, documents: docs, analysisDelayMs: 5, ...(redFlags ? { redFlags } : {}) });
+  const app = createApp({ pool: db.pool, jwtSecret: 'test-secret', crypto, otp, abdm, integration, requireMfa, aiInterviewer, ...(aiProvider ? { aiProvider } : {}), ...(loginLimiter ? { loginLimiter } : {}), ...(notifier ? { notifier } : {}), ...(reportPool ? { reportPool } : {}), monitorIntervalMs, exposeDevCode: true, documents: docs, analysisDelayMs: 5, ...(redFlags ? { redFlags } : {}) });
   const server = app.listen(0);
   const base = `http://127.0.0.1:${server.address().port}`;
 
@@ -96,6 +96,20 @@ export async function startTestApp({ redFlags, ocrEngine, limits, docWorkers = 3
     return r.cookie;
   };
 
+  // Answers the interview along the patient's real path (the given answers, else a plain default) until the question `stopAt` is next.
+  const walkTo = async (cookie, stopAt = null, given = {}) => {
+    const CONFIRM = { visual: true, audio: true };
+    for (let i = 0; i < 20; i++) {
+      const { body } = await call('GET', '/api/patient/interview/next', { cookie });
+      if (body.done || body.question.key === stopAt) return body;
+      const q = body.question;
+      const value = q.key in given ? given[q.key] : q.key === 'cc.reason' ? 'test visit' : q.key === 'cc.main' ? 'fever' : q.type === 'yes_no' ? 'no'
+        : q.type === 'single' ? q.options[0].value : q.type === 'multi' ? [(q.options.find((o) => o.value === 'none') ?? q.options[0]).value] : q.type === 'number' ? 3 : 'a note';
+      await call('POST', '/api/patient/interview/answer', { cookie, body: { questionKey: q.key, value, modality: 'tap', confirmation: CONFIRM } });
+    }
+    throw new Error('walkTo did not reach ' + stopAt);
+  };
+
   // Raw file upload (the Patient portal sends the file as the request body).
   const send = async (method, path, buffer, { cookie, name = 'scan' } = {}) => {
     const res = await fetch(`${base}${path}`, {
@@ -106,7 +120,7 @@ export async function startTestApp({ redFlags, ocrEngine, limits, docWorkers = 3
   };
 
   return {
-    db, base, call, send, otp, form, verifyMobile, registerPatient, login, docs, dir, analysis: app.locals.analysis, integration, crypto, monitor: app.locals.monitor, app, ai: app.locals.ai,
+    db, base, call, send, otp, form, verifyMobile, registerPatient, login, walkTo, docs, dir, analysis: app.locals.analysis, integration, crypto, monitor: app.locals.monitor, app, ai: app.locals.ai,
     // waits for every file to be read and for the analysis that follows it
     async settle() { await docs.pipeline.idle(); await app.locals.analysis.idle(); await docs.pipeline.idle(); await app.locals.ai.idle(); },
     async close() { server.close(); await docs.pipeline.idle(); await app.locals.analysis.idle(); await app.locals.ai.idle(); await db.drop(); await rm(dir, { recursive: true, force: true }); },

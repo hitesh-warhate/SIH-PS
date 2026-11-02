@@ -1,12 +1,27 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PAIN_COMPLAINTS, QUESTIONS, SECTIONS } from '../config/questions.v1.js';
-import { activeQuestions, nextQuestion, presentQuestion, staleKeys, validateAnswer, structuredHistory } from '../src/interview/dialogue.js';
+import { MAX_QUESTIONS, QUESTIONS, ROOT, SECTIONS } from '../config/questions.v1.js';
+import { deriveFromReason, nextQuestion, presentQuestion, staleKeys, validateAnswer, structuredHistory } from '../src/interview/dialogue.js';
 import { createRuleNarrationMapper } from '../src/interview/narration.js';
 
 const TYPES = ['yes_no', 'single', 'multi', 'number', 'text'];
 const ans = (obj) => Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, v === 'SKIP' ? { skipped: true } : { value: v }]));
-const followUps = (cc) => activeQuestions(ans({ 'emergency.screen': ['none'], 'cc.main': cc })).map((q) => q.key).filter((k) => !['emergency.screen', 'cc.main'].includes(k) && QUESTIONS.find((q) => q.key === k).when);
+// Every answer a question can take by tapping (one option at a time for several-answer questions).
+const choices = (q) => (q.type === 'yes_no' ? ['yes', 'no'] : q.type === 'single' ? q.options.map((o) => o.value)
+  : q.type === 'multi' ? q.options.map((o) => [o.value]) : q.type === 'number' ? [2, 9] : ['text']);
+
+// The keys asked, in order, when the patient gives the answers in `given` and a plain default everywhere else.
+function walk(given = {}) {
+  const answers = {};
+  for (let guard = 0; guard < 20; guard++) {
+    const { question } = nextQuestion(answers);
+    if (!question) return Object.keys(answers);
+    const v = question.key in given ? given[question.key] : question.type === 'yes_no' ? 'no' : question.type === 'multi' ? [question.options.at(-1).value]
+      : question.type === 'single' ? question.options[0].value : question.type === 'number' ? 3 : 'text';
+    answers[question.key] = v === 'SKIP' ? { skipped: true } : { value: v };
+  }
+  throw new Error('dialogue did not end');
+}
 
 test('the bank is well formed: unique keys, valid types, three languages on every text and option', () => {
   const seen = new Set();
@@ -25,16 +40,22 @@ test('the bank is well formed: unique keys, valid types, three languages on ever
   assert.ok(QUESTIONS.length >= 40);
 });
 
-test('every condition refers to an earlier question and a value that question can take', () => {
-  const pos = new Map(QUESTIONS.map((q, i) => [q.key, i]));
-  const walk = (w, i, key) => {
-    if (w.all || w.any) return (w.all ?? w.any).forEach((x) => walk(x, i, key));
-    const ref = QUESTIONS[pos.get(w.key)];
-    assert.ok(ref && pos.get(w.key) < i, `${key} depends on ${w.key}, which must come earlier`);
-    const allowed = ref.type === 'yes_no' ? ['yes', 'no'] : ref.options.map((o) => o.value);
-    for (const v of [].concat(w.eq ?? w.in ?? w.includes)) assert.ok(allowed.includes(v), `${key}: ${w.key} cannot be ${v}`);
+test('every branching rule leads to a question in the bank, using values its question can take', () => {
+  const byKey = new Map(QUESTIONS.map((q) => [q.key, q]));
+  const values = (k) => { const ref = byKey.get(k); return ref.type === 'yes_no' ? ['yes', 'no'] : ref.options.map((o) => o.value); };
+  const check = (w, key) => {
+    if (w.all || w.any) return (w.all ?? w.any).forEach((x) => check(x, key));
+    assert.ok(byKey.has(w.key), `${key} depends on unknown ${w.key}`);
+    for (const v of [].concat(w.eq ?? w.in ?? w.includes)) assert.ok(values(w.key).includes(v), `${key}: ${w.key} cannot be ${v}`);
   };
-  QUESTIONS.forEach((q, i) => q.when && walk(q.when, i, q.key));
+  for (const q of QUESTIONS) {
+    const rules = q.next == null ? [] : Array.isArray(q.next) ? q.next : [q.next];
+    for (const r of rules) {
+      const target = Array.isArray(r) ? r[1] : r;
+      if (Array.isArray(r)) check(r[0], q.key);
+      assert.ok(target === null || byKey.has(target), `${q.key} leads to unknown ${target}`);
+    }
+  }
 });
 
 test('allergies, medicines and emergency symptoms are critical (confirmed on screen and by audio)', () => {
@@ -42,34 +63,72 @@ test('allergies, medicines and emergency symptoms are critical (confirmed on scr
   for (const k of ['emergency.screen', 'allergy.any', 'allergy.list', 'drug.current_any', 'drug.current_list', 'pain.associated']) assert.ok(critical.has(k), k);
 });
 
-test('follow-up questions differ for chest pain, fever and back pain, and pain uses SOCRATES', () => {
-  const chest = followUps('chest_pain'), fever = followUps('fever'), back = followUps('back_pain');
+test('the first question is always the reason for the visit', () => {
+  assert.equal(ROOT, 'cc.reason');
+  assert.equal(nextQuestion({}).question.key, 'cc.reason');
+  assert.equal(nextQuestion({}).question.type, 'text'); // in the patient's own words, typed or spoken
+  assert.match(QUESTIONS.find((q) => q.key === 'cc.reason').text[0], /reason for your visit/);
+});
+
+test('each next question depends on the answers: different reasons and answers lead to different questions', () => {
+  const chest = walk({ 'cc.main': 'chest_pain' }), fever = walk({ 'cc.main': 'fever' }), back = walk({ 'cc.main': 'back_pain' });
   for (const [a, b] of [[chest, fever], [chest, back], [fever, back]]) assert.notDeepEqual(a, b);
-  assert.ok(fever.includes('fever.pattern') && !chest.includes('fever.pattern'));
-  assert.ok(back.includes('back.leg_numb') && !fever.includes('back.leg_numb'));
-  const socrates = ['pain.site', 'pain.onset', 'pain.character', 'pain.radiation', 'pain.associated', 'pain.timing', 'pain.exacerbating', 'pain.relieving', 'pain.severity'];
-  for (const cc of PAIN_COMPLAINTS) for (const k of socrates) assert.ok(followUps(cc).includes(k), `${cc} needs ${k}`);
-  for (const k of socrates) assert.ok(!followUps('fever').includes(k), `fever must not use ${k}`);
+  assert.ok(fever.includes('fever.chills') && !chest.includes('fever.chills'));
+  assert.ok(back.includes('back.bladder') && !fever.includes('back.bladder'));
+  // the same reason branches on the answer just given
+  assert.ok(walk({ 'cc.main': 'chest_pain', 'pain.onset': 'sudden' }).includes('pain.associated'));
+  assert.ok(walk({ 'cc.main': 'chest_pain', 'pain.onset': 'gradual' }).includes('pain.timing'));
+  assert.ok(walk({ 'cc.main': 'fever', 'fever.chills': 'yes' }).includes('fever.pattern'));
+  assert.ok(walk({ 'cc.main': 'fever', 'fever.chills': 'no' }).includes('fever.rash'));
+});
+
+test('no answer path is longer than ten questions, and every path ends with medicines and allergies', () => {
+  let paths = 0;
+  const visit = (answers) => {
+    const { question } = nextQuestion(answers);
+    if (!question) {
+      paths++;
+      const keys = Object.keys(answers);
+      const asked = keys.filter((k) => !answers[k].derived);
+      assert.ok(asked.length <= MAX_QUESTIONS, `${asked.length} questions: ${asked.join(' > ')}`);
+      assert.ok(keys.includes('drug.current_any') && keys.includes('allergy.any'), keys.join(' > '));
+      return;
+    }
+    const derivable = ['cc.main', 'cc.duration'].includes(question.key);
+    for (const v of [...choices(question), 'SKIP']) {
+      visit({ ...answers, [question.key]: v === 'SKIP' ? { skipped: true } : { value: v } });
+      // the same answer read from the patient's own words: not asked, so it leaves room for another question
+      if (derivable && v !== 'SKIP') visit({ ...answers, [question.key]: { value: v, derived: true } });
+    }
+  };
+  visit({});
+  assert.ok(paths > 1000, `only ${paths} paths`);
+});
+
+test('the questions the red-flag rules read are on the path for their reason', () => {
+  assert.ok(walk({ 'cc.main': 'chest_pain', 'pain.onset': 'sudden' }).includes('pain.associated'));
+  assert.ok(walk({ 'cc.main': 'headache', 'pain.onset': 'sudden' }).includes('pain.severity'));
+  assert.ok(walk({ 'cc.main': 'cough' }).includes('cough.blood'));
+  for (const injury of ['yes', 'no']) assert.ok(walk({ 'cc.main': 'back_pain', 'back.injury': injury }).includes('back.bladder'));
+  for (const cc of ['chest_pain', 'fever', 'back_pain', 'cough', 'abdominal_pain', 'headache', 'other']) assert.ok(walk({ 'cc.main': cc }).includes('emergency.screen'), cc);
 });
 
 test('a skipped question is "not answered", never "no", and does not open its follow-ups', () => {
-  const keys = (a) => activeQuestions(a).map((q) => q.key);
-  assert.ok(!keys(ans({ 'psh.any': 'SKIP' })).includes('psh.details'));
-  assert.ok(!keys(ans({ 'psh.any': 'no' })).includes('psh.details'));
-  assert.ok(keys(ans({ 'psh.any': 'yes' })).includes('psh.details'));
-  const h = structuredHistory({ 'psh.any': { skipped: true }, 'allergy.any': { value: 'no' } }, 'en');
+  assert.ok(!walk({ 'drug.current_any': 'SKIP' }).includes('drug.current_list'));
+  assert.ok(!walk({ 'drug.current_any': 'no' }).includes('drug.current_list'));
+  assert.ok(walk({ 'drug.current_any': 'yes' }).includes('drug.current_list'));
+  const h = structuredHistory(ans({ 'cc.reason': 'fever', 'cc.main': 'fever', 'emergency.screen': 'SKIP' }), 'en');
   const item = (k) => h.flatMap((s) => s.items).find((i) => i.key === k);
-  assert.equal(item('psh.any').status, 'not_answered');
-  assert.equal(item('psh.any').answer, null);
-  assert.equal(item('allergy.any').answer, 'No');
-  assert.equal(item('drug.current_any').status, 'not_asked');
+  assert.equal(item('emergency.screen').status, 'not_answered');
+  assert.equal(item('emergency.screen').answer, null);
+  assert.equal(item('cc.duration').status, 'not_asked');
 });
 
 test('changing an earlier answer makes the dependent answers stale', () => {
-  const a = ans({ 'emergency.screen': ['none'], 'cc.main': 'fever', 'fever.pattern': 'continuous' });
+  const a = ans({ 'cc.reason': 'fever', 'cc.main': 'fever', 'emergency.screen': ['none'], 'cc.duration': 'd1_3', 'fever.chills': 'yes', 'fever.pattern': 'continuous' });
   assert.deepEqual(staleKeys(a), []);
   a['cc.main'] = { value: 'chest_pain' };
-  assert.deepEqual(staleKeys(a), ['fever.pattern']);
+  assert.deepEqual(staleKeys(a).sort(), ['fever.chills', 'fever.pattern']);
 });
 
 test('answer validation by type', () => {
@@ -85,7 +144,7 @@ test('answer validation by type', () => {
 test('every question can be answered by tapping: a valid answer exists and is presented in all three languages', () => {
   for (const q of QUESTIONS) {
     const candidates = q.options ? q.options.map((o) => (q.type === 'multi' ? [o.value] : o.value)) : q.type === 'number' ? [q.min ?? 0, q.max ?? 120] : ['free text'];
-    for (const c of candidates) assert.ok(validateAnswer(q, q.type === 'yes_no' ? c : c), `${q.key}: ${c}`);
+    for (const c of candidates) assert.ok(validateAnswer(q, c), `${q.key}: ${c}`);
     for (const lang of ['en', 'hi', 'mr']) {
       const p = presentQuestion(q, lang);
       assert.ok(p.text.trim());
@@ -94,18 +153,41 @@ test('every question can be answered by tapping: a valid answer exists and is pr
   }
 });
 
-test('the dialogue walks the whole ontology to the end', () => {
-  const answers = {};
-  let guard = 0;
-  for (;;) {
-    const { question } = nextQuestion(answers);
-    if (!question) break;
-    const v = question.type === 'yes_no' ? 'yes' : question.type === 'multi' ? [question.options[0].value]
-      : question.type === 'single' ? question.options[0].value : question.type === 'number' ? 3 : 'text';
-    answers[question.key] = { value: v };
-    assert.ok(++guard < 80, 'dialogue did not terminate');
-  }
-  assert.ok(guard >= 30);
+test('the dialogue ends after the closing questions', () => {
+  const keys = walk({ 'drug.current_any': 'yes', 'allergy.any': 'yes' });
+  assert.deepEqual(keys.slice(-4), ['drug.current_any', 'drug.current_list', 'allergy.any', 'allergy.list']);
+  assert.equal(keys[0], 'cc.reason');
+});
+
+test('the reason in the patient\'s own words fills in the complaint and how long, and is never guessed', () => {
+  const m = createRuleNarrationMapper();
+  assert.deepEqual(deriveFromReason(m.map('I have had a cough for 3 days')), { 'cc.main': 'cough', 'cc.duration': 'd1_3' });
+  assert.deepEqual(deriveFromReason(m.map('मुझे 2 हफ्ते से बुखार है')), { 'cc.main': 'fever', 'cc.duration': 'w1_4' });
+  assert.deepEqual(deriveFromReason(m.map('kamar dard hai')), { 'cc.main': 'back_pain' });
+  assert.deepEqual(deriveFromReason(m.map('my knee hurts')), {}); // nothing named: the patient is asked which is closest
+  assert.deepEqual(deriveFromReason(m.map('fever and cough')), {}); // two named: asked, not guessed
+});
+
+test('answers read from the reason are kept until the path reaches them, and are not counted as questions asked', () => {
+  const a = { 'cc.reason': { value: 'cough for 3 days' }, 'cc.main': { value: 'cough', derived: true }, 'cc.duration': { value: 'd1_3', derived: true } };
+  assert.deepEqual(staleKeys(a), []);
+  const { question, answered } = nextQuestion(a);
+  assert.equal(question.key, 'emergency.screen');
+  assert.equal(answered, 1);
+});
+
+test('questions after the reason are phrased around it, in every language', () => {
+  const a = ans({ 'cc.reason': 'I have a cough', 'cc.main': 'cough', 'emergency.screen': ['none'], 'cc.duration': 'd1_3' });
+  const q = nextQuestion(a).question;
+  assert.equal(presentQuestion(q, 'en', a).text, 'About your cough: Have you coughed up blood?');
+  assert.match(presentQuestion(q, 'hi', a).text, /^खाँसी के बारे में: /);
+  assert.match(presentQuestion(q, 'mr', a).text, /^खोकला बद्दल: /);
+  // something else: the patient's own words are used
+  const o = ans({ 'cc.reason': 'my knee hurts', 'cc.main': 'other', 'emergency.screen': ['none'], 'cc.duration': 'd1_3' });
+  assert.match(presentQuestion(nextQuestion(o).question, 'en', o).text, /^About “my knee hurts”: /);
+  // the safety questions stay exactly as written
+  assert.equal(presentQuestion(QUESTIONS.find((x) => x.key === 'emergency.screen'), 'en', a).text, 'Are you having any of these right now?');
+  assert.equal(presentQuestion(QUESTIONS.find((x) => x.key === 'allergy.any'), 'en', a).text, 'Are you allergic to any medicine or food?');
 });
 
 test('narration mapping reports only what the words contain', () => {

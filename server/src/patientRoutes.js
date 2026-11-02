@@ -13,7 +13,7 @@ export const OTP_MAX_ATTEMPTS = 3;
 export const OTP_MAX_SENDS = 3; // per mobile per 15 minutes
 const OTP_TTL_SECONDS = 300;
 
-export function createPatientRouter({ pool, jwtSecret, crypto, otp, abdm, issueSession, exposeDevCode, redFlags, narration, help, docs, analysis, summary, purger, ai }) {
+export function createPatientRouter({ pool, jwtSecret, crypto, otp, abdm, issueSession, exposeDevCode, redFlags, narration, help, docs, analysis, summary, purger, ai, interviewer }) {
   const router = express.Router();
 
   // FR-P5: nothing leaves the Patient portal API with analysis results, abnormal flags or alert levels.
@@ -260,7 +260,7 @@ export function createPatientRouter({ pool, jwtSecret, crypto, otp, abdm, issueS
   });
 
   // ---- Interview (Phase 2): every route needs a live session and history consent ----
-  router.use('/interview', requireSession, requirePurpose('history'), createInterviewRouter({ pool, redFlags, narration, help, analysis }));
+  router.use('/interview', requireSession, requirePurpose('history'), createInterviewRouter({ pool, redFlags, narration, help, analysis, interviewer }));
 
   // ---- Consent-guarded writes ----
   router.put('/responses/:questionKey', requireSession, requirePurpose('history'), async (req, res) => {

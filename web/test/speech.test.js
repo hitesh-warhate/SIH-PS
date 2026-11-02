@@ -19,14 +19,40 @@ test('speak uses the patient language and resolves when the utterance ends', asy
   assert.deepEqual([spoken[0].text, spoken[0].lang, spoken[0].rate], ['नमस्ते', 'hi-IN', 0.7]);
 });
 
-test('listen returns the transcript with its confidence, in the chosen language', async () => {
+test('listen returns the transcript with its confidence and the other guesses, in the chosen language', async () => {
   let used;
   class Recognition {
-    start() { used = this.lang; this.onresult({ results: [[{ transcript: ' सुनीता ', confidence: 0.82 }]] }); }
+    start() { used = this; this.onresult({ results: [[{ transcript: ' सुनीता ', confidence: 0.82 }, { transcript: 'सुनिता' }]] }); }
   }
   const s = createSpeech({ webkitSpeechRecognition: Recognition });
-  assert.deepEqual(await s.listen('mr'), { transcript: 'सुनीता', confidence: 0.82 });
-  assert.equal(used, 'mr-IN');
+  assert.deepEqual(await s.listen('mr'), { transcript: 'सुनीता', confidence: 0.82, alternatives: ['सुनीता', 'सुनिता'] });
+  assert.equal(used.lang, 'mr-IN');
+  assert.equal(used.maxAlternatives, 5);
+});
+
+test('listen shows words while speaking, and stops reading the prompt aloud first', async () => {
+  let cancelled = 0;
+  const interim = [];
+  class Recognition {
+    start() {
+      this.onresult({ results: [Object.assign([{ transcript: 'chest' }], { isFinal: false })] });
+      this.onresult({ results: [Object.assign([{ transcript: 'chest pain', confidence: 0.9 }], { isFinal: true })] });
+      this.onend();
+    }
+  }
+  const s = createSpeech({ SpeechRecognition: Recognition, speechSynthesis: { cancel() { cancelled++; } } });
+  const r = await s.listen('en', { onInterim: (x) => interim.push(x) });
+  assert.equal(r.transcript, 'chest pain');
+  assert.deepEqual(interim, ['chest']);
+  assert.equal(cancelled, 1);
+});
+
+test('listen tells a blocked or missing microphone apart from silence', async () => {
+  const failing = (error) => createSpeech({ SpeechRecognition: class { start() { this.onerror({ error }); } } }).listen('en');
+  await assert.rejects(failing('not-allowed'), /denied/);
+  await assert.rejects(failing('audio-capture'), /no-mic/);
+  await assert.rejects(failing('network'), /network/);
+  await assert.rejects(failing('no-speech'), /no-speech/);
 });
 
 test('listen reports no-speech and unsupported browsers so the screen can fall back to touch', async () => {

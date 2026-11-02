@@ -34,7 +34,7 @@ async function patient({ name = 'Overview Patient', submit = true, files = true,
   const consent = await t.call('POST', '/api/patient/consent', { cookie: reg.cookie, body: { purposes: ALL, language } });
   const enc = consent.body.encounterId;
   const a = (k, v) => t.call('POST', '/api/patient/interview/answer', { cookie: reg.cookie, body: { questionKey: k, value: v, modality: 'tap', confirmation: CONFIRM } });
-  await a('emergency.screen', ['none']); await a('cc.main', 'fever'); await a('cc.duration', 'd1_3');
+  await a('cc.reason', 'test visit'); await a('emergency.screen', ['none']); await a('cc.main', 'fever'); await a('cc.duration', 'd1_3');
   if (files) await t.send('POST', '/api/patient/documents', png('en-lab-printed'), { cookie: reg.cookie, name: 'lab.png' });
   await t.settle();
   if (submit) await t.call('POST', '/api/patient/submit', { cookie: reg.cookie });
@@ -108,7 +108,7 @@ test('the rule-based writer needs no model: it restates what was recorded, the p
     const reg = await rules.registerPatient({ fullName: 'Rules Patient', mobile: '8500000001', age: 30, sex: 'male', language: 'hi' });
     const consent = await rules.call('POST', '/api/patient/consent', { cookie: reg.cookie, body: { purposes: ALL, language: 'hi' } });
     const a = (k, v) => rules.call('POST', '/api/patient/interview/answer', { cookie: reg.cookie, body: { questionKey: k, value: v, modality: 'tap', confirmation: CONFIRM } });
-    await a('emergency.screen', ['none']); await a('cc.main', 'cough'); await a('cc.duration', 'w1_4');
+    await a('cc.reason', 'test visit'); await a('emergency.screen', ['none']); await a('cc.main', 'cough'); await a('cc.duration', 'w1_4');
     await rules.send('POST', '/api/patient/documents', png('en-lab-printed'), { cookie: reg.cookie, name: 'lab.png' });
     await rules.settle();
     assert.deepEqual(await rules.call('GET', '/api/patient/summary', { cookie: reg.cookie }).then((r) => r.body), { submitted: false });

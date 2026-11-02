@@ -66,3 +66,17 @@ export function AccessibilityToggles() {
     </div>
   );
 }
+
+// Text size, contrast and light or dark, folded behind one "Aa Display" button so the top bar stays simple.
+export function DisplayMenu() {
+  const { t } = useI18n();
+  return (
+    <details className="display-menu">
+      <summary className="touch"><span className="aa" aria-hidden="true">Aa</span> {t('display.title')}</summary>
+      <div className="display-pop">
+        <AccessibilityToggles />
+        <ThemeToggle />
+      </div>
+    </details>
+  );
+}

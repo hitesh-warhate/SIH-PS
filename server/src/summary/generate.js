@@ -48,6 +48,8 @@ function interviewItems(answers, sectionId, opts) {
       ...(answered ? { text: all((i) => displayAnswer(q, a, ['en', 'hi', 'mr'][i])) } : { text: null }),
       quoted: answered && q.type === 'text' ? [String(a.value)] : [],
       source: { type: 'patient', modality: a?.modality ?? null },
+      // a question written by the AI interviewer is marked as such, with the reason it gave for asking
+      ...(q.ai ? { askedBy: 'ai', rationale: q.rationale ?? null, model: q.model ?? null } : {}),
     };
   });
 }

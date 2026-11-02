@@ -2,7 +2,8 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
 import { useI18n } from '../i18n/index.jsx';
-import { AccessibilityToggles, LanguageSwitch, ThemeToggle } from '../components/Controls.jsx';
+import { DisplayMenu, LanguageSwitch } from '../components/Controls.jsx';
+import { api } from '../api.js';
 import Brand from '../components/Brand.jsx';
 import Dashboard from './Dashboard.jsx';
 import { AppShell } from '../ui/Shell.jsx';
@@ -12,16 +13,6 @@ import DoctorWorkspace from './DoctorWorkspace.jsx';
 import StaffDeliveries from './StaffDeliveries.jsx';
 import { AdminAccounts, AdminAudit, AdminDepartments, AdminHealth, AdminReports } from './AdminConsole.jsx';
 import { DoctorBanner, StaffAlerts, StaffQueue } from './Alerts.jsx';
-
-function Placeholder({ phase }) {
-  const { t } = useI18n();
-  return (
-    <section className="card">
-      <h2>{t('placeholder.title')}</h2>
-      <p>{t('placeholder.body', { phase })}</p>
-    </section>
-  );
-}
 
 // Simple line glyphs for the landing page and the sign-in panel.
 const GLYPHS = {
@@ -42,6 +33,9 @@ const GLYPHS = {
 export function Glyph({ name, size = 22 }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d={GLYPHS[name]} fill="currentColor" /></svg>;
 }
+
+// The synthetic seed accounts (server/.env.example), shown on the sign-in card in development builds only.
+const DEMO = { staff: ['staff.test', 'staff-demo-pass'], doctor: ['doctor.test', 'doctor-demo-pass'], admin: ['admin.test', 'admin-demo-pass'] };
 
 const FEATURES = [['voice', 'landing.f1'], ['bolt', 'landing.f2'], ['doc', 'landing.f3'], ['spark', 'landing.f4']];
 
@@ -91,7 +85,7 @@ function SignIn({ portal }) {
         <p className="muted">{t('signin.lead', { portal: t(`portal.${portal}`) })}</p>
         <label className="fld">
           <span>{t('signin.username')}</span>
-          <span className="fld-box"><Glyph name="user" size={18} /><input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoFocus required /></span>
+          <span className="fld-box"><Glyph name="user" size={18} /><input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus required /></span>
         </label>
         <label className="fld">
           <span>{t('signin.password')}</span>
@@ -112,7 +106,9 @@ function SignIn({ portal }) {
         <button type="submit" className="btn btn-primary btn-lg" disabled={busy}>
           {busy ? <span className="spinner" aria-hidden="true" /> : null}{busy ? t('signin.busy') : t('signin.submit')}
         </button>
+        {import.meta.env.DEV && DEMO[portal] && <p className="auth-demo">{t('signin.demo', { user: DEMO[portal][0], pass: DEMO[portal][1] })}</p>}
         <p className="auth-foot"><Glyph name="shield" size={16} />{t('landing.privacy')}</p>
+        <Link to="/" className="auth-back">← {t('signin.back')}</Link>
       </form>
     </div>
   );
@@ -120,7 +116,13 @@ function SignIn({ portal }) {
 
 const initials = (name = '') => name.replace(/^(dr\.?|mr\.?|mrs\.?|ms\.?)\s+/i, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
 
-// The page's top card: language, accessibility, light or dark, and who is signed in with the way out.
+// The patient terminal is shared: "Start again" signs the current patient out and returns to the first screen.
+async function startAgain() {
+  try { await api('/auth/logout', { method: 'POST' }); } catch { /* the page reload starts a fresh session anyway */ }
+  window.location.assign('/patient');
+}
+
+// The page's top card: language, a Display menu, and who is signed in with the way out (or "Start again" on the patient terminal).
 function Header({ portal, withBrand = true }) {
   const { t } = useI18n();
   const { session, logout } = useAuth();
@@ -130,9 +132,9 @@ function Header({ portal, withBrand = true }) {
       <span className="portal-name">{t(`portal.${portal}`)}</span>
       <div className="spacer" />
       <LanguageSwitch />
-      <AccessibilityToggles />
-      <ThemeToggle />
-      {session && (
+      <DisplayMenu />
+      {portal === 'patient' && <button type="button" className="touch restart-btn" onClick={startAgain}>↺ {t('display.startOver')}</button>}
+      {session && portal !== 'patient' && (
         <div className="user-chip">
           <span className="avatar" aria-hidden="true">{initials(session.name)}</span>
           <span className="who"><strong>{session.name}</strong><small>{t(`portal.${session.portal ?? portal}`)}</small></span>
@@ -161,7 +163,8 @@ function DeskShell({ portal, items, banner = null }) {
       </div>
     );
   }
-  const all = [['dashboard', 'nav.dashboard', 0, <Dashboard key="dash" portal={portal} />], ...items].map(([path, key, phase, element, group]) => [path, key, phase, element ?? <Placeholder phase={phase} />, group]);
+  // Screens that are not built yet (no element) stay out of the menu, so nobody lands on an empty page.
+  const all = [['dashboard', 'nav.dashboard', 0, <Dashboard key="dash" portal={portal} />], ...items].filter(([, , , element]) => element);
   return <AppShell portal={portal} items={all} banner={banner} />;
 }
 
@@ -203,8 +206,7 @@ export function Landing() {
         <span className="brand"><Brand />{t('app.name')}</span>
         <div className="spacer" />
         <LanguageSwitch />
-        <AccessibilityToggles />
-        <ThemeToggle />
+        <DisplayMenu />
       </header>
 
       <main className="land-main">
@@ -215,7 +217,7 @@ export function Landing() {
             <p className="land-lead">{t('landing.sub')}</p>
             <div className="land-ctas">
               <Link to="/patient" className="btn btn-primary btn-lg">{t('landing.cta')}<Glyph name="arrow" size={20} /></Link>
-              <Link to="/doctor" className="btn btn-ghost btn-lg">{t('landing.staffCta')}</Link>
+              <a href="#choose" className="btn btn-ghost btn-lg">{t('landing.staffCta')}</a>
             </div>
             <p className="land-trust"><Glyph name="shield" size={18} />{t('landing.privacy')}</p>
           </div>
@@ -244,6 +246,19 @@ export function Landing() {
               </Link>
             ))}
           </div>
+        </section>
+
+        <section className="land-how" aria-labelledby="how">
+          <h2 id="how">{t('landing.how.title')}</h2>
+          <ol className="how-steps">
+            {[1, 2, 3].map((n) => (
+              <li key={n}>
+                <span className="how-n">{n}</span>
+                <strong>{t(`landing.how.s${n}`)}</strong>
+                <span className="muted">{t(`landing.how.s${n}.body`)}</span>
+              </li>
+            ))}
+          </ol>
         </section>
 
         <section className="land-features">

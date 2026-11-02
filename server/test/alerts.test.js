@@ -62,7 +62,7 @@ async function openStream(path, cookie) {
 }
 
 const raiseChestAlert = async (p) => {
-  await p.answer('emergency.screen', ['none']);
+  await p.answer('cc.reason', 'test visit'); await p.answer('emergency.screen', ['none']);
   await p.answer('cc.main', 'chest_pain');
   await p.answer('cc.duration', 'lt1d');
   await p.answer('hpi.progress', 'worse');
@@ -151,14 +151,13 @@ test('the staff queue orders alerts first, then token order, and help requests a
   const second = await patient();  // routine
   const third = await patient();   // attention-level
   const fourth = await patient();  // emergency, latest token
-  await third.answer('cc.main', 'abdominal_pain');
-  await t.call('POST', '/api/patient/help', { cookie: second.cookie, body: { screen: 'interview' } });
-  await fourth.answer('emergency.screen', ['e_stroke']);
-  await first.answer('cc.main', 'cough');
-  // attention rule needs the follow-ups to be reachable
-  for (const [k, v] of [['cc.duration', 'd1_3'], ['hpi.progress', 'same'], ['pain.site', 'belly'], ['pain.onset', 'gradual'], ['pain.character', 'dull'], ['pain.radiation', 'no'], ['pain.associated', ['none']], ['pain.timing', 'constant'], ['pain.exacerbating', ['nothing']], ['pain.relieving', ['nothing']], ['pain.severity', 10]]) {
+  // attention rule (severe pain) needs the stomach-pain branch to reach the severity question
+  for (const [k, v] of [['cc.reason', 'test visit'], ['emergency.screen', ['none']], ['cc.main', 'abdominal_pain'], ['cc.duration', 'd1_3'], ['pain.severity', 10]]) {
     await third.answer(k, v);
   }
+  await t.call('POST', '/api/patient/help', { cookie: second.cookie, body: { screen: 'interview' } });
+  await fourth.answer('cc.reason', 'test visit'); await fourth.answer('emergency.screen', ['e_stroke']);
+  await first.answer('cc.reason', 'test visit'); await first.answer('emergency.screen', ['none']); await first.answer('cc.main', 'cough');
   const { queue } = (await t.call('GET', '/api/staff/queue', { cookie: staff })).body;
   const mine = queue.filter((e) => [first, second, third, fourth].some((p) => p.enc === e.encounterId));
   const order = mine.map((e) => [first, second, third, fourth].findIndex((p) => p.enc === e.encounterId));
@@ -187,7 +186,7 @@ test('alerts reach the staff and doctor streams in real time (latency measured),
   const samples = [];
   for (let i = 0; i < 6; i++) {
     const p = await patient();
-    await p.answer('emergency.screen', ['none']);
+    await p.answer('cc.reason', 'test visit'); await p.answer('emergency.screen', ['none']);
     const t0 = performance.now();
     const [toStaff, toDoctor] = [
       staffStream.waitFor((e) => e.event === 'alert' && e.data.encounterId === p.enc),
@@ -227,7 +226,7 @@ test('alerts survive a reload and a dropped connection: a new stream starts with
   before.close(); // the connection drops
 
   const p2 = await patient();                 // raised while the screen was offline
-  await p2.answer('emergency.screen', ['e_faint']);
+  await p2.answer('cc.reason', 'test visit'); await p2.answer('emergency.screen', ['e_faint']);
 
   const after = await openStream('/api/staff/alerts/stream', staff);
   const snap = (await after.waitFor((e) => e.event === 'snapshot')).data;
@@ -261,7 +260,7 @@ test('doctors are shown their department only (department-level routing)', async
   await q('UPDATE encounters SET department_id = $2 WHERE id = $1', [p.enc, peds.id]); // not the test doctor's department
   const stream = await openStream('/api/doctor/alerts/stream', doctor);
   await stream.waitFor((e) => e.event === 'snapshot');
-  await p.answer('emergency.screen', ['e_bleed']);
+  await p.answer('cc.reason', 'test visit'); await p.answer('emergency.screen', ['e_bleed']);
   await new Promise((r) => setTimeout(r, 300));
   assert.ok(!stream.events.some((e) => e.event === 'alert' && e.data.encounterId === p.enc), 'not pushed to another department');
   assert.ok(!(await t.call('GET', '/api/doctor/alerts', { cookie: doctor })).body.alerts.some((a) => a.encounterId === p.enc));

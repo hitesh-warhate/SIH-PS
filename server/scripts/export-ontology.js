@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ONTOLOGY_VERSION, QUESTIONS, SECTIONS } from '../config/questions.v1.js';
+import { MAX_QUESTIONS, ONTOLOGY_VERSION, QUESTIONS, ROOT, SECTIONS } from '../config/questions.v1.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const labels = Object.fromEntries(['en', 'hi', 'mr'].map((l) => [l, JSON.parse(readFileSync(path.join(root, 'web/src/i18n', `${l}.json`), 'utf8'))]));
@@ -11,6 +11,10 @@ const ICONS = ['listen', 'repeat', 'slower', 'speak', 'tap', 'read', 'language',
 
 const when = (w) => (w.all ? w.all.map(when).join(' AND ') : w.any ? w.any.map(when).join(' OR ')
   : `${w.key} ${'eq' in w ? `= ${w.eq}` : 'in' in w ? `in [${w.in.join(', ')}]` : `includes ${w.includes}`}`);
+const target = (k) => (k === null ? 'end of interview' : `\`${k}\``);
+const next = (n) => (n === undefined || n === null ? 'not on any path (kept for older answers)'
+  : !Array.isArray(n) ? target(n)
+    : n.map((r) => (Array.isArray(r) ? `if ${when(r[0])} → ${target(r[1])}` : `otherwise → ${target(r)}`)).join('; '));
 
 const out = [];
 out.push(`# Question bank and ontology v${ONTOLOGY_VERSION}: clinician and language review`, '');
@@ -19,7 +23,7 @@ out.push('**Status:** ready to send to a clinician and a native-speaker reviewer
 out.push('## How to review', '',
   '- **Clinician:** is each question clinically appropriate, in a sensible order, with the right follow-ups? Are any red-flag questions missing? Is the SOCRATES coverage for pain adequate (site, onset, character, radiation, associated symptoms, timing, exacerbating and relieving factors, severity)?',
   '- **Language reviewer:** is the Hindi and Marathi natural and unambiguous to a patient with low literacy?',
-  '- **Branching:** "Asked when" shows the condition under which a follow-up appears. Follow-ups carry the follow-up badge on screen.',
+  `- **Branching:** the interview starts at \`${ROOT}\` (the reason for the visit). "Next" shows which question each answer leads to; a skipped answer always takes "otherwise". No patient is asked more than ${MAX_QUESTIONS} questions.`,
   '- **Critical:** these answers are read back on screen and by audio before they are saved.', '');
 out.push('## Icon labels (PRD Section 8.3)', '', '| Icon | English | Hindi | Marathi |', '|---|---|---|---|');
 for (const i of ICONS) out.push(`| ${i} | ${labels.en[`icon.${i}`]} | ${labels.hi[`icon.${i}`]} | ${labels.mr[`icon.${i}`]} |`);
@@ -29,7 +33,7 @@ for (const [id, title] of SECTIONS) {
   for (const q of QUESTIONS.filter((x) => x.section === id)) {
     out.push(`### \`${q.key}\`${q.critical ? ' (critical)' : ''}`, '',
       `- Type: ${q.type}${q.type === 'number' ? ` (${q.min ?? 0} to ${q.max ?? 120})` : ''}`,
-      `- Asked when: ${q.when ? when(q.when) : 'always'}`,
+      `- Next: ${next(q.next)}`,
       `- English: ${q.text[0]}`, `- Hindi: ${q.text[1]}`, `- Marathi: ${q.text[2]}`);
     if (q.options) {
       out.push('', '| Value | English | Hindi | Marathi |', '|---|---|---|---|');

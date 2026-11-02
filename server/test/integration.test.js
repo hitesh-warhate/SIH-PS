@@ -44,7 +44,8 @@ async function confirmedCase({ purposes = ALL, abha = true, name = 'Integration 
     await t.db.pool.query(`INSERT INTO patient_identifiers (patient_id, type, value_encrypted) VALUES ($1, 'abha', $2)`, [e.patient_id, t.crypto.encrypt(ABHA)]);
   }
   const answer = (k, v) => t.call('POST', '/api/patient/interview/answer', { cookie: reg.cookie, body: { questionKey: k, value: v, modality: 'tap', confirmation: CONFIRM } });
-  await answer('emergency.screen', ['none']); await answer('cc.main', 'fever'); await answer('cc.duration', 'd1_3');
+  await answer('cc.reason', 'test visit'); await answer('emergency.screen', ['none']); await answer('cc.main', 'fever'); await answer('cc.duration', 'd1_3');
+  await t.walkTo(reg.cookie, 'drug.current_any');
   await answer('drug.current_any', 'yes'); await answer('drug.current_list', 'Metformin 500 mg'); await answer('allergy.any', 'yes'); await answer('allergy.list', 'Penicillin');
   await t.send('POST', '/api/patient/documents', png('en-lab-printed'), { cookie: reg.cookie, name: 'lab.png' });
   await t.settle();

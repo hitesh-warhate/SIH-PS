@@ -1,13 +1,14 @@
 // Free narration -> ontology fields (FR-A13). The language model is an interface; this deterministic mapper is the v1 engine.
 // It only reports what the words literally contain (a complaint keyword, a duration) and never invents or diagnoses.
 // Its input and output are stored with the answer, so every mapping can be audited.
+// Everyday words too, in Devanagari and in Latin letters, because speech recognizers set to Hindi or Marathi often answer in either.
 const COMPLAINTS = {
-  chest_pain: ['chest', 'सीने', 'सीन', 'छाती', 'छातीत'],
-  fever: ['fever', 'बुखार', 'ताप'],
-  back_pain: ['back pain', 'backache', 'पीठ', 'पाठ'],
-  cough: ['cough', 'खाँसी', 'खांसी', 'खोकला'],
-  abdominal_pain: ['stomach', 'abdomen', 'belly', 'पेट', 'पोट'],
-  headache: ['headache', 'head ache', 'सिर', 'डोके'],
+  chest_pain: ['chest', 'सीने', 'सीन', 'छाती', 'छातीत', 'seene', 'seena', 'chhati'],
+  fever: ['fever', 'temperature', 'बुखार', 'ताप', 'bukhar', 'bukhaar', 'taap'],
+  back_pain: ['back pain', 'backache', 'back ache', 'lower back', 'पीठ', 'पाठ', 'कमर', 'kamar'],
+  cough: ['cough', 'खाँसी', 'खांसी', 'खोकला', 'khansi', 'khaasi', 'khokla'],
+  abdominal_pain: ['stomach', 'abdomen', 'abdominal', 'belly', 'tummy', 'पेट', 'पोट', 'pet dard', 'pet me dard', 'pot dukh'],
+  headache: ['headache', 'head ache', 'head pain', 'migraine', 'सिर', 'सर दर्द', 'डोके', 'sir dard', 'sar dard', 'doke dukh'],
 };
 const DIGITS = { '०': '0', '१': '1', '२': '2', '३': '3', '४': '4', '५': '5', '६': '6', '७': '7', '८': '8', '९': '9' };
 const UNIT = [[/^(day|days|दिन|दिवस)/, 'days'], [/^(week|weeks|सप्ताह|हफ्ते|हफ़्ते|आठवडे|आठवड)/, 'weeks'], [/^(month|months|महीन|महिन)/, 'months']];

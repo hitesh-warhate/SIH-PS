@@ -151,6 +151,7 @@ test('AYUSH questions work in all three languages and all three listening modes'
 
 test('red flags still alert in AYUSH mode', async () => {
   const p = await patient({ ayush: true });
+  await p.answer('cc.reason', 'test visit');
   assert.equal((await p.answer('emergency.screen', ['e_chest'])).status, 200);
   assert.ok((await q('SELECT 1 FROM alerts WHERE encounter_id = $1', [p.enc])).length >= 1);
   const state = (await t.call('GET', '/api/patient/interview/state', { cookie: p.cookie })).body;
@@ -160,7 +161,7 @@ test('red flags still alert in AYUSH mode', async () => {
 
 test('switching modes loses no answers, and a paused AYUSH interview resumes where it stopped', async () => {
   const p = await patient({ ayush: true });
-  const first = await walk(p, { stopAfter: 40 }); // part of the way into the AYUSH questions
+  const first = await walk(p, { stopAfter: 15 }); // part of the way into the AYUSH questions
   const ayushDone = first.filter((k) => k.startsWith('ayush.'));
   assert.ok(ayushDone.length >= 3, `got ${ayushDone.length} AYUSH answers`);
   const keysOf = async () => (await q('SELECT question_key FROM interview_responses WHERE encounter_id = $1', [p.enc])).map((r) => r.question_key).sort();

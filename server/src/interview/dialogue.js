@@ -1,4 +1,4 @@
-import { QUESTIONS, SECTIONS, UNITS, YES_NO_LABELS } from '../../config/questions.v1.js';
+import { BRANCH_LIMIT, CLOSING, CLOSING_MAX, MAX_QUESTIONS, OPENING, QUESTIONS, ROOT, SECTIONS, UNITS, YES_NO_LABELS } from '../../config/questions.v1.js';
 import { AYUSH_QUESTIONS, AYUSH_SECTIONS } from '../../config/ayush.v1.js';
 
 const IDX = { en: 0, hi: 1, mr: 2 };
@@ -18,32 +18,137 @@ function holds(when, values) {
   return false;
 }
 
-// The dialogue manager can only ask what the ontology lists, in ontology order, when its conditions hold.
-// AYUSH questions (Phase 7) follow the standard ones and are asked only in AYUSH mode. Answers already given are kept either way.
-export function activeQuestions(answers, { ayush = false } = {}) {
-  const values = {};
-  const active = [];
-  for (const q of ayush ? [...QUESTIONS, ...AYUSH_QUESTIONS] : QUESTIONS) {
-    if (q.when && !holds(q.when, values)) continue;
-    active.push(q);
-    const a = answers[q.key];
-    if (a && !a.skipped) values[q.key] = a.value;
+const valuesOf = (answers) => Object.fromEntries(Object.entries(answers).filter(([, a]) => a && !a.skipped).map(([k, a]) => [k, a.value]));
+const OPENING_SET = new Set(OPENING);
+const CLOSING_SET = new Set(['drug.current_any', 'drug.current_list', 'allergy.any', 'allergy.list']);
+
+// The question after `q`, from its `next` rule and the answers so far (see questions.v1.js).
+function follow(q, values) {
+  const { next } = q;
+  if (!Array.isArray(next)) return next ?? null;
+  for (const rule of next) {
+    if (!Array.isArray(rule)) return rule;
+    if (holds(rule[0], values)) return rule[1];
   }
-  return active;
+  return null;
 }
 
+// The patient's path through the branching interview: from the reason for the visit, each answer picks the next question.
+// It stops at the first question not yet answered (what comes after depends on that answer). Answers read from the patient's own
+// words (`derived`) were never asked, so they leave room for more questions about the reason; the questions about the reason are
+// capped so that what is actually asked, including the closing medicines and allergies, never exceeds MAX_QUESTIONS.
+function path(answers) {
+  const values = valuesOf(answers);
+  const out = [];
+  const seen = new Set();
+  let key = ROOT;
+  let opened = 0; // opening questions the patient was actually asked
+  let branch = 0;
+  while (key && !seen.has(key)) {
+    if (!OPENING_SET.has(key) && !CLOSING_SET.has(key) && branch++ >= Math.min(BRANCH_LIMIT, MAX_QUESTIONS - CLOSING_MAX - opened)) key = CLOSING;
+    if (OPENING_SET.has(key) && !answers[key]?.derived) opened++;
+    seen.add(key);
+    const q = byKey.get(key);
+    out.push(q);
+    if (!answers[key]) return { questions: out, done: false };
+    key = follow(q, values);
+  }
+  return { questions: out, done: true };
+}
+
+// The AI interview (ai/interviewer.js): the reason, the emergency screen, then medicines and allergies, then questions written by the
+// model from the answers so far, until the model says it has enough or MAX_QUESTIONS are asked. An AI question is stored with its answer
+// (answer.question), so the path can be rebuilt from the answers alone; `pending` is the AI question waiting for an answer.
+export const isAiKey = (key) => key.startsWith('ai.');
+export const AI_FIXED = ['cc.reason', 'emergency.screen'];
+const aiQuestionOf = (key, answer) => (answer?.question ? { ...answer.question, key } : null);
+const aiKeys = (answers) => Object.keys(answers).filter(isAiKey).sort((a, b) => Number(a.slice(3)) - Number(b.slice(3)));
+
+function aiPath(answers, { pending = null, done = false } = {}) {
+  const values = valuesOf(answers);
+  const out = [];
+  for (const key of AI_FIXED) {
+    out.push(byKey.get(key));
+    if (!answers[key]) return { questions: out, done: false };
+  }
+  for (let key = CLOSING; key; key = follow(byKey.get(key), values)) {
+    out.push(byKey.get(key));
+    if (!answers[key]) return { questions: out, done: false };
+  }
+  for (const key of aiKeys(answers)) out.push(aiQuestionOf(key, answers[key]));
+  if (pending && out.length < MAX_QUESTIONS) return { questions: [...out, pending], done: false };
+  const full = out.length >= MAX_QUESTIONS;
+  return { questions: out, done: done || full, needsAi: !done && !full };
+}
+// The engine for these answers: AI when the encounter runs it, or when it already holds AI answers (summaries pass no engine).
+const usesAi = (answers, opts) => opts?.engine === 'ai' || (opts?.engine !== 'rules' && aiKeys(answers).length > 0);
+const route = (answers, opts) => (usesAi(answers, opts) ? aiPath(answers, opts?.ai) : path(answers));
+
+// Answers read from the reason in the patient's own words: the complaint when exactly one is named, and how long when a duration is
+// said. They are stored as `derived` (the patient can change them on the review screen) and are never guessed: no match, no answer.
+export function deriveFromReason(extracted) {
+  const out = {};
+  const complaint = QUESTIONS.find((x) => x.key === 'cc.main').options.find((o) => o.value === extracted?.complaints?.[0]);
+  if (extracted?.complaints?.length === 1 && complaint) out['cc.main'] = complaint.value;
+  if (extracted?.duration?.key) out['cc.duration'] = extracted.duration.key;
+  return out;
+}
+
+// What the patient came for, in their language, for phrasing the questions after it: the complaint they named or chose, or for
+// "something else" their own words (shortened). null before the reason is known.
+const ABOUT = [(x) => (x.startsWith('“') ? `About ${x}: ` : `About your ${x}: `), (x) => `${x} के बारे में: `, (x) => `${x} बद्दल: `];
+function subjectOf(answers, i) {
+  const main = answers['cc.main'];
+  const reason = answers['cc.reason'];
+  if (main && !main.skipped && main.value !== 'other') {
+    const label = QUESTIONS.find((x) => x.key === 'cc.main').options.find((o) => o.value === main.value).label[i];
+    return i === 0 ? label.toLowerCase() : label;
+  }
+  if (reason && !reason.skipped && typeof reason.value === 'string') {
+    const words = reason.value.trim().replace(/\s+/g, ' ');
+    return `“${words.length > 40 ? `${words.slice(0, 38).trim()}…` : words}”`;
+  }
+  return null;
+}
+// Questions about the complaint itself are phrased around it; the safety questions and the reason itself stay as written.
+const PHRASED = (q) => !q.ai && ['chief_complaint', 'hpi'].includes(q.section) && !['cc.reason', 'cc.main', 'emergency.screen'].includes(q.key);
+
+// The questions on the patient's path so far (answered, plus the one to answer next). AYUSH questions (Phase 7) follow a finished
+// path and are asked only in AYUSH mode, by their own conditions. Answers already given are kept either way.
+// opts: { ayush, engine: 'ai' | 'rules', ai: { pending, done } } (engine and ai come from the encounter; see interview/routes.js).
+export function activeQuestions(answers, opts = {}) {
+  const { questions, done } = route(answers, opts);
+  if (!opts.ayush) return questions;
+  const values = valuesOf(answers);
+  // AYUSH questions are asked once the main path is finished; AYUSH answers already given always stay in the record.
+  return [...questions, ...AYUSH_QUESTIONS.filter((q) => (done || answers[q.key]) && (!q.when || holds(q.when, values)))];
+}
+
+// `needsAi`: the AI interview has room for another question but the model has not written it yet (the route asks it, then calls again).
 export function nextQuestion(answers, opts) {
   const active = activeQuestions(answers, opts);
-  const answered = active.filter((q) => answers[q.key]).length;
+  const answered = active.filter((q) => answers[q.key] && !answers[q.key].derived).length; // only what the patient was asked
   const next = active.find((q) => !answers[q.key]);
-  return { question: next ?? null, answered, total: active.length };
+  // The rest of the path depends on answers not given yet, so the total is the most it can be (shown as "of about").
+  const ayushCount = opts?.ayush ? AYUSH_QUESTIONS.length : 0;
+  const needsAi = !next && usesAi(answers, opts) && Boolean(aiPath(answers, opts?.ai).needsAi);
+  return { question: next ?? null, answered, total: next || needsAi ? Math.max(active.length, MAX_QUESTIONS + ayushCount) : answered, needsAi };
 }
 
-// Answers whose question is no longer reachable (an earlier answer was changed) are stale.
-// AYUSH answers are never stale just because AYUSH mode is off, so switching modes loses nothing.
-export function staleKeys(answers) {
-  const live = new Set(activeQuestions(answers, { ayush: true }).map((q) => q.key));
-  return Object.keys(answers).filter((k) => !live.has(k));
+// The question with this key on the encounter's path: a bank question, the pending AI question, or an AI question already answered.
+export function findQuestion(key, answers, opts) {
+  return activeQuestions(answers, opts).find((q) => q.key === key) ?? null;
+}
+
+// Answers whose question is no longer on the path (an earlier answer was changed) are stale.
+// AYUSH answers are never stale just because AYUSH mode is off, or the main path is not finished, so switching modes loses nothing.
+// Answers read from the reason are kept while the reason stands: they are filled in ahead of the path reaching them.
+// AI questions keep their answers: what the model asked stays part of the record even when an earlier answer is changed.
+export function staleKeys(answers, opts) {
+  const live = new Set(route(answers, opts).questions.map((q) => q.key));
+  const values = valuesOf(answers);
+  for (const q of AYUSH_QUESTIONS) if (!q.when || holds(q.when, values)) live.add(q.key);
+  return Object.keys(answers).filter((k) => !live.has(k) && !isAiKey(k) && !(answers[k].derived && answers['cc.reason']));
 }
 
 export function validateAnswer(q, value) {
@@ -61,9 +166,12 @@ export function validateAnswer(q, value) {
   }
 }
 
-export function presentQuestion(q, lang) {
+// The question as the patient sees it. With the answers so far, a question about the complaint names it: "About your cough: …".
+export function presentQuestion(q, lang, answers = {}) {
   const i = IDX[lang] ?? 0;
-  const base = { key: q.key, section: q.section, type: q.type, text: q.text[i], critical: Boolean(q.critical), followUp: Boolean(q.when) };
+  const subject = PHRASED(q) ? subjectOf(answers, i) : null;
+  const base = { key: q.key, section: q.section, type: q.type, text: subject ? ABOUT[i](subject) + q.text[i] : q.text[i], critical: Boolean(q.critical), followUp: Boolean(q.when) || (!q.key.startsWith('ayush.') && !OPENING_SET.has(q.key) && !CLOSING_SET.has(q.key)),
+    ...(q.ai ? { askedBy: 'ai' } : {}) };
   if (q.options) base.options = q.options.map((o) => ({ value: o.value, label: o.label[i] }));
   if (q.type === 'number') Object.assign(base, { min: q.min ?? 0, max: q.max ?? 120, scale: Boolean(q.scale) });
   return base;

@@ -34,7 +34,10 @@ function Journey({ step, children }) {
   );
 }
 
-const EMPTY_FORM ={ fullName: '', age: '', sex: '', address: '', emergencyContact: '', abhaId: '', registrationConsent: false };
+// Server field names from a rejected registration, mapped to the labels the patient sees.
+const FIELD_LABEL = { fullName: 'flow.name', dateOfBirthOrAge: 'flow.age', sex: 'flow.sex', mobile: 'flow.mobile.label', emergencyContact: 'flow.emergency', abhaId: 'flow.abha', aadhaar: 'flow.lookup.aadhaar', registrationConsent: 'flow.details.agree' };
+
+const EMPTY_FORM = { fullName: '', age: '', sex: '', address: '', emergencyContact: '', abhaId: '', registrationConsent: false };
 
 // Patient journey, phase 1: language, identify or register, consent. One thing per screen; voice or touch.
 export default function PatientFlow() {
@@ -131,14 +134,14 @@ export default function PatientFlow() {
     go('consent');
   };
 
-  const sendOtp = async () => {
+  const sendOtp = async (resend = false) => {
     const r = await send('/patient/otp/send', { mobile });
     if (!r) return;
     if (r.status === 429) { setMessage(t('flow.otp.tooMany')); return go('help'); }
-    if (!r.ok) return setMessage(t('flow.error.invalid'));
+    if (!r.ok) return setMessage(t('flow.mobile.badStart'));
     setChallenge(r.body);
     setCode('');
-    go('otp');
+    if (resend) setHelpMsg(t('flow.otp.resent')); else go('otp');
   };
 
   const lookupBy = async (body) => {
@@ -169,7 +172,10 @@ export default function PatientFlow() {
     if (!r) return;
     if (r.status === 409) { setCandidates(r.body.candidates); return go('duplicate'); }
     if (r.status === 401) { setMessage(t('flow.otp.expired')); return go('mobile'); }
-    if (!r.ok) return setMessage(t('flow.error.invalid'));
+    if (!r.ok) {
+      const labels = (r.body?.fields ?? []).map((f) => FIELD_LABEL[f]).filter(Boolean).map((k) => t(k));
+      return setMessage(labels.length ? t('flow.error.fields', { list: labels.join(', ') }) : t('flow.error.invalid'));
+    }
     await finishIdentity(r.body);
   };
 
@@ -186,6 +192,11 @@ export default function PatientFlow() {
   };
 
   const setField = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
+  const mobileBad = mobile.length > 0 && !/^[6-9]/.test(mobile);
+  const mobileHint = mobileBad ? t('flow.mobile.badStart') : mobile.length > 0 && mobile.length < 10 ? t('flow.mobile.more', { n: 10 - mobile.length }) : '';
+  const missing = [
+    !form.fullName.trim() && t('flow.name'), !form.age && t('flow.age'), !form.sex && t('flow.sex'), !form.registrationConsent && t('flow.details.agree'),
+  ].filter(Boolean);
   const nav = (
     <div className="flow-nav">
       {stack.current.length > 0 && !['done', 'ended', 'consent'].includes(step) && <IconButton name="back" onClick={back} />}
@@ -227,6 +238,7 @@ export default function PatientFlow() {
       {step === 'language' && (
         <section>
           <h1>{t('flow.language.title')}</h1>
+          <p className="step-sub">{t('flow.sub.language')}</p>
           <div className="choices">
             {LANGUAGES.map((l) => <Choice key={l.code} selected={l.code === lang} onClick={() => { setLang(l.code); go('choose'); }}><Icon name="language" size={36} /> {l.label}</Choice>)}
           </div>
@@ -236,6 +248,7 @@ export default function PatientFlow() {
       {step === 'choose' && (
         <section>
           <h1>{t('flow.choose.title')}</h1>
+          <p className="step-sub">{t('flow.sub.choose')}</p>
           <div className="choices">
             <Choice onClick={() => { setMode('new'); go('mobile'); }}>{t('flow.choose.new')}</Choice>
             <Choice onClick={() => { setMode('returning'); go('lookup'); }}>{t('flow.choose.returning')}</Choice>
@@ -246,6 +259,7 @@ export default function PatientFlow() {
       {step === 'lookup' && (
         <section>
           <h1>{t('flow.lookup.title')}</h1>
+          <p className="step-sub">{t('flow.sub.lookup')}</p>
           <div className="choices">
             {ROUTES.map(([r, key]) => (
               <Choice key={r} onClick={() => { setRoute(r); if (r === 'mobile_otp') go('mobile'); else go('lookupForm'); }}>{t(`flow.${key}`)}</Choice>
@@ -274,19 +288,23 @@ export default function PatientFlow() {
       {step === 'mobile' && (
         <section>
           <h1>{t('flow.mobile.title')}</h1>
+          <p className="step-sub">{t('flow.sub.mobile')}</p>
           <VoiceField label={t('flow.mobile.label')} digits maxLength={10} value={mobile} onChange={setMobile} hint={t('flow.mobile.hint')} />
           {note}
-          {next(mobile.length !== 10, sendOtp)}
+          {mobileHint && <p className={`field-hint${mobileBad ? ' is-bad' : ''}`} role="status">{mobileHint}</p>}
+          {next(mobile.length !== 10 || mobileBad, () => sendOtp())}
         </section>
       )}
 
       {step === 'otp' && (
         <section>
           <h1>{t('flow.otp.title')}</h1>
+          <p className="step-sub">{t('flow.sub.otp')}</p>
           <VoiceField label={t('flow.otp.label')} digits maxLength={6} value={code} onChange={setCode} />
           {import.meta.env.DEV && challenge?.devCode && <p className="dev-note">{t('flow.otp.devCode', { code: challenge.devCode })}</p>}
           {note}
           {next(code.length !== 6, verifyOtp)}
+          <button type="button" className="linklike resend" disabled={busy} onClick={() => sendOtp(true)}>{t('flow.otp.resend')}</button>
         </section>
       )}
 
@@ -303,6 +321,7 @@ export default function PatientFlow() {
       {step === 'details' && (
         <section>
           <h1>{t('flow.details.title')}</h1>
+          <p className="step-sub">{t('flow.sub.details')}</p>
           <VoiceField label={t('flow.name')} value={form.fullName} onChange={setField('fullName')} />
           <VoiceField label={t('flow.age')} digits maxLength={3} value={form.age} onChange={setField('age')} />
           <div className="field"><label>{t('flow.sex')}</label>
@@ -317,7 +336,8 @@ export default function PatientFlow() {
             {form.registrationConsent ? '✔ ' : '☐ '}{t('flow.regConsent')}
           </Choice>
           {note}
-          {next(!form.fullName.trim() || !form.age || !form.sex || !form.registrationConsent, () => register())}
+          {missing.length > 0 && <p className="field-hint" role="status">{t('flow.details.missing', { list: missing.join(', ') })}</p>}
+          {next(missing.length > 0, () => register())}
         </section>
       )}
 
@@ -340,11 +360,12 @@ export default function PatientFlow() {
         <section>
           <h1>{t('flow.consent.title')}</h1>
           <p className="lead">{t('consent.intro')}</p>
-          <p className="draft-note">{t('consent.draft')}</p>
+          {import.meta.env.DEV && <p className="draft-note">{t('consent.draft')}</p>}
           <IconButton name="listen" onClick={() => speech.speak([t('consent.intro'), ...PURPOSES.map(([, k]) => t(k))].join('. '), lang)} />
           {PURPOSES.map(([p, key]) => (
             <div key={p} className="consent-row">
               <p>{t(key)}</p>
+              <small className="muted consent-why">{t(`${key}.desc`)}</small>
               <div className="choices">
                 <Choice variant="yes" selected={purposes[p] === true} onClick={() => setPurposes((s) => ({ ...s, [p]: true }))}>✔ {t('common.yes')}</Choice>
                 <Choice variant="no" selected={purposes[p] === false} onClick={() => setPurposes((s) => ({ ...s, [p]: false }))}>✖ {t('common.no')}</Choice>

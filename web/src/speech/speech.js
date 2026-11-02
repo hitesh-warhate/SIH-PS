@@ -2,6 +2,11 @@
 // Phase 2 hardens it (Bhashini / AI4Bharat models, noise handling, benchmarks) behind this same interface.
 export const LOCALES = { en: 'en-IN', hi: 'hi-IN', mr: 'mr-IN' };
 
+// How long a single listen may run before it is stopped, so a missed "end of speech" never leaves the microphone open.
+const MAX_LISTEN_MS = 12_000;
+// Browser error codes, folded into the few cases the screens explain differently.
+const ERRORS = { 'no-speech': 'no-speech', aborted: 'no-speech', 'not-allowed': 'denied', 'service-not-allowed': 'denied', 'audio-capture': 'no-mic', network: 'network' };
+
 export function createSpeech(env = globalThis) {
   const synth = env.speechSynthesis;
   const Recognition = env.SpeechRecognition ?? env.webkitSpeechRecognition;
@@ -26,22 +31,38 @@ export function createSpeech(env = globalThis) {
 
     stopSpeaking() { synth?.cancel(); },
 
-    // Resolves { transcript, confidence }; rejects with Error('unsupported' | 'no-speech' | 'error').
-    listen(lang) {
+    // Resolves { transcript, confidence, alternatives }: the best guess plus the recognizer's other guesses, best first.
+    // `onInterim(text)` receives the words while the patient is still speaking, so the screen can show them live.
+    // Rejects with Error('unsupported' | 'no-speech' | 'denied' | 'no-mic' | 'network' | 'error').
+    listen(lang, { onInterim } = {}) {
       if (!Recognition) return Promise.reject(new Error('unsupported'));
+      // The prompt being read aloud would otherwise be picked up by the microphone as the patient's answer.
+      synth?.cancel();
       return new Promise((resolve, reject) => {
         const r = new Recognition();
         r.lang = LOCALES[lang] ?? LOCALES.en;
-        r.interimResults = false;
-        r.maxAlternatives = 1;
+        r.interimResults = Boolean(onInterim);
+        r.continuous = false;
+        r.maxAlternatives = 5;
+        let settled = false;
+        const finish = (fn, arg) => { if (settled) return; settled = true; clearTimeout(timer); fn(arg); };
+        const timer = setTimeout(() => { try { r.stop(); } catch { /* already stopped */ } }, MAX_LISTEN_MS);
+
         r.onresult = (e) => {
-          const best = e.results?.[0]?.[0];
-          if (best?.transcript) resolve({ transcript: best.transcript.trim(), confidence: best.confidence ?? null });
-          else reject(new Error('no-speech'));
+          const results = Array.from(e.results ?? []);
+          const final = results.find((res) => res.isFinal !== false);
+          if (!final) {
+            onInterim?.(results.map((res) => res[0]?.transcript ?? '').join(' ').trim());
+            return;
+          }
+          const alternatives = Array.from(final).map((a) => a?.transcript?.trim()).filter(Boolean);
+          if (!alternatives.length) return finish(reject, new Error('no-speech'));
+          finish(resolve, { transcript: alternatives[0], confidence: final[0].confidence ?? null, alternatives });
         };
-        r.onnomatch = () => reject(new Error('no-speech'));
-        r.onerror = (e) => reject(new Error(e.error === 'no-speech' ? 'no-speech' : 'error'));
-        r.start();
+        r.onnomatch = () => finish(reject, new Error('no-speech'));
+        r.onerror = (e) => finish(reject, new Error(ERRORS[e.error] ?? 'error'));
+        r.onend = () => finish(reject, new Error('no-speech'));
+        try { r.start(); } catch { finish(reject, new Error('error')); }
       });
     },
   };

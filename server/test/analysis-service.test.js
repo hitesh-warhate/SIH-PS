@@ -118,6 +118,7 @@ test('a medicine or allergy answer re-runs the analysis and joins the file data'
   const p = await patient();
   await p.upload(png('en-rx-printed'));
   await t.settle();
+  await t.walkTo(p.cookie, 'drug.current_any');
   assert.equal((await p.answer('drug.current_any', 'yes')).status, 200);
   assert.equal((await p.answer('drug.current_list', 'Metformin, Warfarin 3 mg')).status, 200);
   assert.equal((await p.answer('allergy.any', 'no')).status, 200);
@@ -170,6 +171,7 @@ for (const count of [5, 15]) {
 test('nothing from the analysis appears in the Patient portal', async () => {
   const p = await patient();
   await p.upload(png('en-lab-printed'));
+  await t.walkTo(p.cookie, 'drug.current_any');
   await p.answer('drug.current_any', 'no');
   await t.settle();
   const secret = /analysis|reconciliation|lab_table|interactions|allergyConflicts|possible_wrong_patient|doseChanges|consistency|outOfRange|direction/i;

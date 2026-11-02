@@ -9,6 +9,7 @@ import { createAlertHub } from './alerts/hub.js';
 import { createHelp } from './alerts/help.js';
 import { createAlertService, createRedFlagEvaluator } from './alerts/service.js';
 import { createRuleNarrationMapper } from './interview/narration.js';
+import { interviewerFromEnv } from './ai/interviewer.js';
 import { createDocuments } from './documents/index.js';
 import { createAnalysisService } from './analysis/service.js';
 import { createSummaryService } from './summary/service.js';
@@ -42,7 +43,7 @@ function readCookie(req, name) {
 }
 
 export function createApp({ pool, jwtSecret, crypto, otp = createMockOtpProvider(), abdm = createStubAbdmProvider(), exposeDevCode = false,
-  redFlags, narration = createRuleNarrationMapper(), documents, analysisDelayMs, requireMfa = false, aiProvider, integration, loginLimiter = createLoginLimiter(), reportPool = pool, notifier, opsToken = process.env.OPS_TOKEN, monitorIntervalMs = 30_000 }) {
+  redFlags, narration = createRuleNarrationMapper(), documents, analysisDelayMs, requireMfa = false, aiProvider, aiInterviewer, integration, loginLimiter = createLoginLimiter(), reportPool = pool, notifier, opsToken = process.env.OPS_TOKEN, monitorIntervalMs = 30_000 }) {
   const app = express();
   const docs = documents ?? createDocuments({ pool, crypto });
   // Cross-document analysis (Phase 5): rebuilt whenever a file finishes, is added, removed, replaced or reordered, or a medicine or allergy answer changes.
@@ -51,6 +52,8 @@ export function createApp({ pool, jwtSecret, crypto, otp = createMockOtpProvider
   docs.pipeline.recover().catch(() => {}); // files that were waiting when the server last stopped go back in the queue
   // The overview of a patient's history, written after submission (rule-based unless an AI model is switched on with AI_PROVIDER).
   const ai = createAiAnalyst({ pool, provider: aiProvider ?? providerFromEnv() });
+  // The AI interviewer (Gemini) writes the questions after the reason for the visit; null keeps the fixed question tree.
+  const interviewer = aiInterviewer === undefined ? interviewerFromEnv() : aiInterviewer;
   app.locals.ai = ai;
   const summary = createSummaryService({ pool, analysis, ai });
   const integ = integration ?? createIntegration({ pool, crypto, his: createHisConnector(), abdm });
@@ -107,11 +110,13 @@ export function createApp({ pool, jwtSecret, crypto, otp = createMockOtpProvider
   // Staff and doctor sign in with credentials, and with a second factor once they have enrolled one (FR-P4). The portal is derived from the
   // role, never from the request. Failed attempts are limited per user and address, and every sign-in outcome is audited (FR-D10).
   app.post('/api/auth/login', async (req, res) => {
-    const { username, password, code } = req.body ?? {};
-    if (typeof username !== 'string' || typeof password !== 'string') {
+    const { username: typed, password, code } = req.body ?? {};
+    if (typeof typed !== 'string' || typeof password !== 'string') {
       return res.status(400).json({ error: 'username_and_password_required' });
     }
-    const key = `${req.ip}|${username.toLowerCase()}`;
+    // Usernames are always stored in lower case (adminRoutes USERNAME), so a capital added by a phone keyboard or a stray space still signs in.
+    const username = typed.trim().toLowerCase();
+    const key = `${req.ip}|${username}`;
     if (loginLimiter.blocked(key)) return res.status(429).json({ error: 'too_many_attempts' });
     const { rows } = await pool.query('SELECT id, role, full_name, password_hash, mfa_secret, mfa_enabled, session_epoch, disabled_at FROM users WHERE username = $1', [username]);
     const user = rows[0];
@@ -170,7 +175,7 @@ export function createApp({ pool, jwtSecret, crypto, otp = createMockOtpProvider
   const mfaGate = (req, res, next) => (requireMfa && req.user && ['staff', 'doctor', 'admin'].includes(req.user.role) && !req.user.mfa ? res.status(403).json({ error: 'mfa_required' }) : next());
 
   // Patient identity (OTP, registration, lookup) and consent live in their own routers; they issue the patient session.
-  app.use('/api/patient', createPatientRouter({ pool, jwtSecret, crypto, otp, abdm, issueSession: issue, exposeDevCode, redFlags: evaluator, narration, help, docs, analysis, summary, purger, ai }));
+  app.use('/api/patient', createPatientRouter({ pool, jwtSecret, crypto, otp, abdm, issueSession: issue, exposeDevCode, redFlags: evaluator, narration, help, docs, analysis, summary, purger, ai, interviewer }));
   app.use('/api/staff', mfaGate, createStaffRouter({ pool, crypto, abdm, hub, service, help, integration: integ }));
   app.use('/api/doctor', mfaGate, createDoctorRouter({ pool, hub, service, help, analysis, summary, store: docs.store, integration: integ }));
 
